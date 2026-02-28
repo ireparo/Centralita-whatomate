@@ -227,43 +227,55 @@ func (m *Manager) GetSessionByCallLogID(callLogID uuid.UUID) *CallSession {
 	return nil
 }
 
-// getOrgTransferTimeout returns the transfer timeout for a session's organization,
-// falling back to the global config default.
-func (m *Manager) getOrgTransferTimeout(orgID uuid.UUID) int {
-	var org models.Organization
-	if err := m.db.Where("id = ?", orgID).First(&org).Error; err == nil && org.Settings != nil {
-		if v, ok := org.Settings["transfer_timeout_secs"].(float64); ok && v > 0 {
-			return int(v)
-		}
-	}
-	return m.config.TransferTimeoutSecs
+// orgCallingSettings holds per-org calling overrides resolved from a single DB query.
+type orgCallingSettings struct {
+	TransferTimeoutSecs int
+	HoldMusicFile       string
+	RingbackFile        string
 }
 
-// getOrgHoldMusic returns the hold music file path for a session's organization,
-// falling back to the global config default.
-func (m *Manager) getOrgHoldMusic(orgID uuid.UUID) string {
-	var org models.Organization
-	if err := m.db.Where("id = ?", orgID).First(&org).Error; err == nil && org.Settings != nil {
-		if v, ok := org.Settings["hold_music_file"].(string); ok && v != "" {
-			return filepath.Join(m.config.AudioDir, v)
-		}
-	}
-	return filepath.Join(m.config.AudioDir, m.config.HoldMusicFile)
-}
-
-// getOrgRingback returns the ringback file path for a session's organization,
-// falling back to the global config default.
-func (m *Manager) getOrgRingback(orgID uuid.UUID) string {
-	var org models.Organization
-	if err := m.db.Where("id = ?", orgID).First(&org).Error; err == nil && org.Settings != nil {
-		if v, ok := org.Settings["ringback_file"].(string); ok && v != "" {
-			return filepath.Join(m.config.AudioDir, v)
-		}
+// getOrgCallingSettings loads org-level calling overrides with a single DB query,
+// falling back to global config defaults for any missing values.
+func (m *Manager) getOrgCallingSettings(orgID uuid.UUID) orgCallingSettings {
+	s := orgCallingSettings{
+		TransferTimeoutSecs: m.config.TransferTimeoutSecs,
+		HoldMusicFile:       filepath.Join(m.config.AudioDir, m.config.HoldMusicFile),
 	}
 	if m.config.RingbackFile != "" {
-		return filepath.Join(m.config.AudioDir, m.config.RingbackFile)
+		s.RingbackFile = filepath.Join(m.config.AudioDir, m.config.RingbackFile)
 	}
-	return ""
+
+	var org models.Organization
+	if err := m.db.Where("id = ?", orgID).First(&org).Error; err != nil || org.Settings == nil {
+		return s
+	}
+
+	if v, ok := org.Settings["transfer_timeout_secs"].(float64); ok && v > 0 {
+		s.TransferTimeoutSecs = int(v)
+	}
+	if v, ok := org.Settings["hold_music_file"].(string); ok && v != "" {
+		s.HoldMusicFile = filepath.Join(m.config.AudioDir, v)
+	}
+	if v, ok := org.Settings["ringback_file"].(string); ok && v != "" {
+		s.RingbackFile = filepath.Join(m.config.AudioDir, v)
+	}
+
+	return s
+}
+
+// getOrgTransferTimeout returns the transfer timeout for a session's organization.
+func (m *Manager) getOrgTransferTimeout(orgID uuid.UUID) int {
+	return m.getOrgCallingSettings(orgID).TransferTimeoutSecs
+}
+
+// getOrgHoldMusic returns the hold music file path for a session's organization.
+func (m *Manager) getOrgHoldMusic(orgID uuid.UUID) string {
+	return m.getOrgCallingSettings(orgID).HoldMusicFile
+}
+
+// getOrgRingback returns the ringback file path for a session's organization.
+func (m *Manager) getOrgRingback(orgID uuid.UUID) string {
+	return m.getOrgCallingSettings(orgID).RingbackFile
 }
 
 // cleanupSession removes a session and releases WebRTC resources

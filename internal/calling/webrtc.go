@@ -23,12 +23,7 @@ func (m *Manager) negotiateWebRTC(session *CallSession, account *models.WhatsApp
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	waAccount := &whatsapp.Account{
-		PhoneID:     account.PhoneID,
-		BusinessID:  account.BusinessID,
-		APIVersion:  account.APIVersion,
-		AccessToken: account.AccessToken,
-	}
+	waAccount := account.ToWAAccount()
 
 	// Create peer connection with Opus codec
 	pc, err := m.createPeerConnection()

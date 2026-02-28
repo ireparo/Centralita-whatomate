@@ -232,13 +232,7 @@ func (a *App) SendOutgoingMessage(ctx context.Context, req OutgoingMessageReques
 
 // toWhatsAppAccount converts models.WhatsAppAccount to whatsapp.Account
 func (a *App) toWhatsAppAccount(account *models.WhatsAppAccount) *whatsapp.Account {
-	return &whatsapp.Account{
-		PhoneID:     account.PhoneID,
-		BusinessID:  account.BusinessID,
-		AppID:       account.AppID,
-		APIVersion:  account.APIVersion,
-		AccessToken: account.AccessToken,
-	}
+	return account.ToWAAccount()
 }
 
 // createOutgoingMessage creates a Message model from the request

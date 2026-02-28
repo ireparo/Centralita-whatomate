@@ -132,7 +132,7 @@ func (p *SLAProcessor) autoCloseExpiredTransfers(orgID uuid.UUID, settings model
 
 		// Send auto-close message to customer if configured
 		if settings.SLA.AutoCloseMessage != "" {
-			p.sendSLAAutoCloseToCustomer(transfer, settings.SLA.AutoCloseMessage)
+			p.sendSLATextToCustomer(transfer, "SLA auto-close message", settings.SLA.AutoCloseMessage)
 		}
 
 		// Update transfer status
@@ -230,7 +230,7 @@ func (p *SLAProcessor) escalateTransfers(orgID uuid.UUID, settings models.Chatbo
 
 		// Send warning message to customer if configured
 		if newLevel == 1 && settings.SLA.WarningMessage != "" {
-			p.sendSLAWarningToCustomer(transfer, settings.SLA.WarningMessage)
+			p.sendSLATextToCustomer(transfer, "SLA warning message", settings.SLA.WarningMessage)
 		}
 	}
 
@@ -280,12 +280,7 @@ func (p *SLAProcessor) notifyEscalation(transfer models.AgentTransfer, settings 
 
 	// Broadcast escalation notification to the organization
 	// Escalation contacts will receive this via the org-wide broadcast
-	contactName := contact.ProfileName
-	phoneNumber := contact.PhoneNumber
-	if p.app.ShouldMaskPhoneNumbers(transfer.OrganizationID) {
-		contactName = MaskIfPhoneNumber(contactName)
-		phoneNumber = MaskPhoneNumber(phoneNumber)
-	}
+	contactName, phoneNumber := p.app.MaskContactFields(transfer.OrganizationID, contact.ProfileName, contact.PhoneNumber)
 
 	p.app.WSHub.BroadcastToOrg(transfer.OrganizationID, websocket.WSMessage{
 		Type: "transfer_escalation",
@@ -309,74 +304,34 @@ func (p *SLAProcessor) notifyEscalation(transfer models.AgentTransfer, settings 
 	)
 }
 
-// sendSLAWarningToCustomer sends a warning message to the customer
-func (p *SLAProcessor) sendSLAWarningToCustomer(transfer models.AgentTransfer, message string) {
-	// Get WhatsApp account
+// sendSLATextToCustomer sends an SLA-related text message to the customer.
+func (p *SLAProcessor) sendSLATextToCustomer(transfer models.AgentTransfer, label, message string) {
 	account, err := p.app.resolveWhatsAppAccount(transfer.OrganizationID, transfer.WhatsAppAccount)
 	if err != nil {
-		p.app.Log.Error("Failed to load WhatsApp account for SLA warning", "error", err)
+		p.app.Log.Error("Failed to load WhatsApp account for "+label, "error", err)
 		return
 	}
 
-	// Get contact
 	var contact models.Contact
 	if err := p.app.DB.Where("id = ?", transfer.ContactID).First(&contact).Error; err != nil {
-		p.app.Log.Error("Failed to load contact for SLA warning", "error", err)
+		p.app.Log.Error("Failed to load contact for "+label, "error", err)
 		return
 	}
 
-	// Send using unified message sender
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err = p.app.SendOutgoingMessage(ctx, OutgoingMessageRequest{
+	if _, err := p.app.SendOutgoingMessage(ctx, OutgoingMessageRequest{
 		Account: account,
 		Contact: &contact,
 		Type:    models.MessageTypeText,
 		Content: message,
-	}, SLASendOptions())
-
-	if err != nil {
-		p.app.Log.Error("Failed to send SLA warning message", "error", err, "phone", transfer.PhoneNumber)
+	}, SLASendOptions()); err != nil {
+		p.app.Log.Error("Failed to send "+label, "error", err, "phone", transfer.PhoneNumber)
 		return
 	}
 
-	p.app.Log.Info("SLA warning message sent to customer", "phone", transfer.PhoneNumber, "transfer_id", transfer.ID)
-}
-
-// sendSLAAutoCloseToCustomer sends an auto-close notification message to the customer
-func (p *SLAProcessor) sendSLAAutoCloseToCustomer(transfer models.AgentTransfer, message string) {
-	// Get WhatsApp account
-	account, err := p.app.resolveWhatsAppAccount(transfer.OrganizationID, transfer.WhatsAppAccount)
-	if err != nil {
-		p.app.Log.Error("Failed to load WhatsApp account for SLA auto-close message", "error", err)
-		return
-	}
-
-	// Get contact
-	var contact models.Contact
-	if err := p.app.DB.Where("id = ?", transfer.ContactID).First(&contact).Error; err != nil {
-		p.app.Log.Error("Failed to load contact for SLA auto-close message", "error", err)
-		return
-	}
-
-	// Send using unified message sender
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	_, err = p.app.SendOutgoingMessage(ctx, OutgoingMessageRequest{
-		Account: account,
-		Contact: &contact,
-		Type:    models.MessageTypeText,
-		Content: message,
-	}, SLASendOptions())
-
-	if err != nil {
-		p.app.Log.Error("Failed to send SLA auto-close message", "error", err, "phone", transfer.PhoneNumber)
-		return
-	}
-
-	p.app.Log.Info("SLA auto-close message sent to customer", "phone", transfer.PhoneNumber, "transfer_id", transfer.ID)
+	p.app.Log.Info(label+" sent to customer", "phone", transfer.PhoneNumber, "transfer_id", transfer.ID)
 }
 
 // broadcastTransferUpdate broadcasts transfer update via WebSocket
@@ -385,12 +340,7 @@ func (p *SLAProcessor) broadcastTransferUpdate(transfer models.AgentTransfer, ev
 	var contact models.Contact
 	p.app.DB.Where("id = ?", transfer.ContactID).First(&contact)
 
-	contactName := contact.ProfileName
-	phoneNumber := contact.PhoneNumber
-	if p.app.ShouldMaskPhoneNumbers(transfer.OrganizationID) {
-		contactName = MaskIfPhoneNumber(contactName)
-		phoneNumber = MaskPhoneNumber(phoneNumber)
-	}
+	contactName, phoneNumber := p.app.MaskContactFields(transfer.OrganizationID, contact.ProfileName, contact.PhoneNumber)
 
 	p.app.WSHub.BroadcastToOrg(transfer.OrganizationID, websocket.WSMessage{
 		Type: "transfer_" + eventType,

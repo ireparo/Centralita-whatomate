@@ -232,6 +232,15 @@ func MaskIfPhoneNumber(s string) string {
 	return s
 }
 
+// MaskContactFields conditionally masks a profile name and phone number
+// if phone masking is enabled for the given organization.
+func (a *App) MaskContactFields(orgID interface{}, profileName, phoneNumber string) (string, string) {
+	if a.ShouldMaskPhoneNumbers(orgID) {
+		return MaskIfPhoneNumber(profileName), MaskPhoneNumber(phoneNumber)
+	}
+	return profileName, phoneNumber
+}
+
 // ShouldMaskPhoneNumbers checks if phone masking is enabled for the organization
 func (a *App) ShouldMaskPhoneNumbers(orgID interface{}) bool {
 	var org models.Organization

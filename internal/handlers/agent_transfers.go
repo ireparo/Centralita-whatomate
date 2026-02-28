@@ -546,13 +546,7 @@ func (a *App) CreateAgentTransfer(r *fastglue.Request) error {
 	a.DB.Preload("Agent").Preload("Team").Preload("TransferredByUser").First(&transfer, transfer.ID)
 
 	// Apply phone masking if enabled
-	shouldMask := a.ShouldMaskPhoneNumbers(orgID)
-	phoneNumber := transfer.PhoneNumber
-	contactName := contact.ProfileName
-	if shouldMask {
-		phoneNumber = MaskPhoneNumber(phoneNumber)
-		contactName = MaskIfPhoneNumber(contactName)
-	}
+	contactName, phoneNumber := a.MaskContactFields(orgID, contact.ProfileName, transfer.PhoneNumber)
 
 	resp := AgentTransferResponse{
 		ID:              transfer.ID.String(),
@@ -1052,12 +1046,7 @@ func (a *App) broadcastTransferCreated(transfer *models.AgentTransfer, contact *
 		return
 	}
 
-	contactName := contact.ProfileName
-	phoneNumber := transfer.PhoneNumber
-	if a.ShouldMaskPhoneNumbers(transfer.OrganizationID) {
-		contactName = MaskIfPhoneNumber(contactName)
-		phoneNumber = MaskPhoneNumber(phoneNumber)
-	}
+	contactName, phoneNumber := a.MaskContactFields(transfer.OrganizationID, contact.ProfileName, transfer.PhoneNumber)
 
 	payload := map[string]any{
 		"id":               transfer.ID.String(),

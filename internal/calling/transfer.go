@@ -9,13 +9,14 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/websocket"
-	"github.com/shridarpatil/whatomate/pkg/whatsapp"
 )
 
 // initiateTransfer starts the transfer flow: puts caller on hold, notifies agents via WebSocket.
 func (m *Manager) initiateTransfer(session *CallSession, waAccount string, teamTarget string, ivrPath []map[string]string) {
+	// Load org-level calling overrides once
+	orgSettings := m.getOrgCallingSettings(session.OrganizationID)
+
 	// Start hold music immediately to avoid silence while DB operations run
-	holdFile := m.getOrgHoldMusic(session.OrganizationID)
 	player := NewAudioPlayer(session.AudioTrack)
 
 	session.mu.Lock()
@@ -23,7 +24,7 @@ func (m *Manager) initiateTransfer(session *CallSession, waAccount string, teamT
 	session.mu.Unlock()
 
 	go func() {
-		_ = player.PlayFileLoop(holdFile)
+		_ = player.PlayFileLoop(orgSettings.HoldMusicFile)
 	}()
 
 	var teamID *uuid.UUID
@@ -69,8 +70,8 @@ func (m *Manager) initiateTransfer(session *CallSession, waAccount string, teamT
 	session.TransferStatus = models.CallTransferStatusWaiting
 	session.mu.Unlock()
 
-	// Start timeout goroutine (use org-level override if set)
-	transferTimeout := m.getOrgTransferTimeout(session.OrganizationID)
+	// Start timeout goroutine
+	transferTimeout := orgSettings.TransferTimeoutSecs
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(transferTimeout)*time.Second)
 
 	session.mu.Lock()
@@ -382,12 +383,7 @@ func (m *Manager) EndTransfer(transferID uuid.UUID) {
 	var account models.WhatsAppAccount
 	if err := m.db.Where("organization_id = ? AND name = ?", session.OrganizationID, session.AccountName).
 		First(&account).Error; err == nil {
-		waAccount := &whatsapp.Account{
-			PhoneID:     account.PhoneID,
-			BusinessID:  account.BusinessID,
-			APIVersion:  account.APIVersion,
-			AccessToken: account.AccessToken,
-		}
+		waAccount := account.ToWAAccount()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := m.whatsapp.TerminateCall(ctx, waAccount, session.ID); err != nil {
