@@ -111,13 +111,6 @@ func (m *Manager) executeNodeLoop(session *CallSession, waAccount *whatsapp.Acco
 
 		m.log.Info("Executing IVR node", "call_id", session.ID, "node_id", node.ID, "type", node.Type, "label", node.Label)
 
-		// Record this step
-		ctx.Path = append(ctx.Path, map[string]string{
-			"node":   node.ID,
-			"type":   string(node.Type),
-			"label":  node.Label,
-		})
-
 		var outcome string
 
 		switch node.Type {
@@ -130,20 +123,54 @@ func (m *Manager) executeNodeLoop(session *CallSession, waAccount *whatsapp.Acco
 		case IVRNodeHTTPCallback:
 			outcome = m.executeHTTPCallback(session, node, ctx)
 		case IVRNodeTransfer:
+			ctx.Path = append(ctx.Path, map[string]string{
+				"node": node.ID, "type": string(node.Type), "label": node.Label,
+			})
 			m.executeTransfer(session, node, ctx)
 			return // terminal
 		case IVRNodeGotoFlow:
+			ctx.Path = append(ctx.Path, map[string]string{
+				"node": node.ID, "type": string(node.Type), "label": node.Label,
+			})
 			m.executeGotoFlow(session, node, ctx, waAccount)
 			return // terminal (recursive call to runIVRFlow)
 		case IVRNodeTiming:
 			outcome = m.executeTiming(session, node)
 		case IVRNodeHangup:
+			ctx.Path = append(ctx.Path, map[string]string{
+				"node": node.ID, "type": string(node.Type), "label": node.Label,
+			})
 			m.executeHangup(session, node, ctx, waAccount, player)
 			return // terminal
 		default:
 			m.log.Error("Unknown IVR node type", "call_id", session.ID, "type", node.Type)
 			return
 		}
+
+		// Record this step after execution so we can include the outcome.
+		step := map[string]string{
+			"node":  node.ID,
+			"type":  string(node.Type),
+			"label": node.Label,
+		}
+
+		// For menu nodes, record the selected digit and option label
+		if node.Type == IVRNodeMenu && strings.HasPrefix(outcome, "digit:") {
+			digit := strings.TrimPrefix(outcome, "digit:")
+			step["digit"] = digit
+			if opts, ok := node.Config["options"].(map[string]interface{}); ok {
+				if optMap, ok := opts[digit].(map[string]interface{}); ok {
+					if optLabel, ok := optMap["label"].(string); ok {
+						step["option_label"] = optLabel
+					}
+				}
+			}
+		}
+		if outcome != "" {
+			step["outcome"] = outcome
+		}
+
+		ctx.Path = append(ctx.Path, step)
 
 		// Resolve the next node via edges
 		nextID := graph.resolveEdge(node.ID, outcome)

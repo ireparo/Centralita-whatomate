@@ -916,6 +916,7 @@ export interface CallTransfer {
   status: 'waiting' | 'connected' | 'completed' | 'abandoned' | 'no_answer'
   team_id?: string
   agent_id?: string
+  initiating_agent_id?: string
   transferred_at: string
   connected_at?: string
   completed_at?: string
@@ -928,6 +929,11 @@ export interface CallTransfer {
     profile_name: string
   }
   agent?: {
+    id: string
+    full_name: string
+    email: string
+  }
+  initiating_agent?: {
     id: string
     full_name: string
     email: string
@@ -982,6 +988,8 @@ export const callTransfersService = {
     api.post<{ sdp_answer: string }>(`/call-transfers/${id}/connect`, { sdp_offer: sdpOffer }),
   hangup: (id: string) =>
     api.post(`/call-transfers/${id}/hangup`),
+  initiate: (data: { call_log_id: string; team_id: string; agent_id?: string }) =>
+    api.post<{ status: string }>('/call-transfers/initiate', data),
 }
 
 export const ivrFlowsService = {

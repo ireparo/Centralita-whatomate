@@ -16,10 +16,14 @@ func (m *Manager) initiateTransfer(session *CallSession, waAccount string, teamT
 	// Load org-level calling overrides once
 	orgSettings := m.getOrgCallingSettings(session.OrganizationID)
 
-	// Start hold music immediately to avoid silence while DB operations run
-	player := NewAudioPlayer(session.AudioTrack)
-
+	// Reuse the IVR player for hold music so RTP sequence numbers continue
+	// from where the IVR left off. A new player starting at seq=0 would be
+	// dropped by the receiver as "old" until seq exceeds the IVR high-water mark.
 	session.mu.Lock()
+	player := session.IVRPlayer
+	if player == nil || player.IsStopped() {
+		player = NewAudioPlayer(session.AudioTrack)
+	}
 	session.HoldPlayer = player
 	session.mu.Unlock()
 
@@ -102,6 +106,203 @@ func (m *Manager) initiateTransfer(session *CallSession, waAccount string, teamT
 		"transfer_id", transfer.ID,
 		"team_id", teamIDStr,
 	)
+}
+
+// InitiateAgentTransfer allows a connected agent to transfer their active call
+// to another team/agent. It tears down the current agent's bridge, puts the
+// caller on hold, and creates a new CallTransfer record.
+func (m *Manager) InitiateAgentTransfer(callLogID, initiatingAgentID uuid.UUID, teamID *uuid.UUID, targetAgentID *uuid.UUID) error {
+	session := m.GetSessionByCallLogID(callLogID)
+	if session == nil {
+		return fmt.Errorf("no active session for call log %s", callLogID)
+	}
+
+	// Load org settings outside lock (DB query)
+	orgSettings := m.getOrgCallingSettings(session.OrganizationID)
+
+	session.mu.Lock()
+	if session.TransferStatus == models.CallTransferStatusWaiting {
+		session.mu.Unlock()
+		return fmt.Errorf("call is already being transferred")
+	}
+
+	// Pick the correct caller track for hold music based on call direction.
+	var holdTrack *webrtc.TrackLocalStaticRTP
+	var callerRemote *webrtc.TrackRemote
+	if session.Direction == models.CallDirectionOutgoing {
+		holdTrack = session.WAAudioTrack
+		callerRemote = session.WARemoteTrack
+	} else {
+		holdTrack = session.AudioTrack
+		callerRemote = session.CallerRemoteTrack
+	}
+
+	if holdTrack == nil {
+		session.mu.Unlock()
+		return fmt.Errorf("no caller audio track available for hold music")
+	}
+
+	player := NewAudioPlayer(holdTrack)
+	session.HoldPlayer = player
+
+	// Snapshot and nil the agent-side resources so we can tear them down outside lock
+	bridge := session.Bridge
+	session.Bridge = nil
+	agentPC := session.AgentPC
+	session.AgentPC = nil
+	session.AgentAudioTrack = nil
+	session.AgentRemoteTrack = nil
+	session.TransferID = uuid.Nil
+	session.TransferStatus = models.CallTransferStatusWaiting
+	session.BridgeStarted = make(chan struct{})
+	session.mu.Unlock()
+
+	// Stop bridge and close old agent PC outside lock.
+	// Disable agentPC's OnConnectionStateChange BEFORE closing it to prevent
+	// it from calling EndCall/EndTransfer which would destroy the session.
+	if agentPC != nil {
+		agentPC.OnConnectionStateChange(func(webrtc.PeerConnectionState) {})
+	}
+	if bridge != nil {
+		bridge.Stop()
+		bridge.Wait() // Wait for goroutines to finish so lastCallerSeq is final.
+
+		// The bridge forwarded agent RTP with the agent's sequence numbers
+		// (which are typically very high). Pion's Write() rewrites the SSRC
+		// but preserves the original seq, so the receiver's high-water mark
+		// is now at the agent's last seq. Advance the hold music player past
+		// that point so the receiver doesn't drop hold music as "old".
+		seq, ts := bridge.LastCallerSeq()
+		if seq > 0 {
+			player.SetSequence(seq, ts)
+		}
+	}
+	if agentPC != nil {
+		_ = agentPC.Close()
+	}
+
+	// Drain caller's remote track until the new bridge takes over.
+	// After the bridge stops, nobody is reading from it and Pion's receive
+	// buffer fills up, causing congestion feedback that degrades the
+	// PeerConnection (including the ability to write hold music).
+	if callerRemote != nil {
+		go m.consumeAudioTrack(session, callerRemote)
+	}
+
+	// Start hold music now that the bridge is stopped and no longer writing
+	// to the same track.
+	m.log.Info("Starting hold music for agent transfer",
+		"call_id", session.ID,
+		"file", orgSettings.HoldMusicFile,
+		"hold_track_nil", holdTrack == nil,
+		"caller_remote_nil", callerRemote == nil,
+		"bridge_was_nil", bridge == nil,
+		"agent_pc_was_nil", agentPC == nil,
+	)
+	holdFile := orgSettings.HoldMusicFile
+	go func() {
+		m.log.Info("Hold music goroutine started", "call_id", session.ID, "file", holdFile)
+		// Play first iteration manually to log packet count
+		packets, err := player.PlayFile(holdFile)
+		if err != nil {
+			m.log.Error("Hold music first play failed",
+				"error", err, "call_id", session.ID, "file", holdFile, "packets_sent", packets)
+			return
+		}
+		m.log.Info("Hold music first loop done",
+			"call_id", session.ID, "packets_sent", packets, "stopped", player.IsStopped())
+		if player.IsStopped() {
+			return
+		}
+		// Continue looping
+		if err := player.PlayFileLoop(holdFile); err != nil {
+			m.log.Error("Hold music playback failed during agent transfer",
+				"error", err, "call_id", session.ID, "file", holdFile)
+		} else {
+			m.log.Info("Hold music stopped (no error)", "call_id", session.ID)
+		}
+	}()
+
+	// Create CallTransfer record
+	transfer := models.CallTransfer{
+		BaseModel:         models.BaseModel{ID: uuid.New()},
+		OrganizationID:    session.OrganizationID,
+		CallLogID:         session.CallLogID,
+		WhatsAppCallID:    session.ID,
+		CallerPhone:       session.CallerPhone,
+		ContactID:         session.ContactID,
+		WhatsAppAccount:   session.AccountName,
+		Status:            models.CallTransferStatusWaiting,
+		TeamID:            teamID,
+		InitiatingAgentID: &initiatingAgentID,
+		TransferredAt:     time.Now(),
+	}
+	if targetAgentID != nil {
+		transfer.AgentID = targetAgentID
+	}
+
+	if err := m.db.Create(&transfer).Error; err != nil {
+		player.Stop()
+		return fmt.Errorf("failed to create call transfer: %w", err)
+	}
+
+	// Update call log status
+	m.db.Model(&models.CallLog{}).
+		Where("id = ?", session.CallLogID).
+		Update("status", models.CallStatusTransferring)
+
+	// Update session state
+	session.mu.Lock()
+	session.TransferID = transfer.ID
+	session.mu.Unlock()
+
+	// Start timeout goroutine
+	transferTimeout := orgSettings.TransferTimeoutSecs
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(transferTimeout)*time.Second)
+
+	session.mu.Lock()
+	session.TransferCancel = cancel
+	session.mu.Unlock()
+
+	go m.waitForTransferTimeout(ctx, session, transfer.ID)
+
+	// Broadcast WebSocket event
+	var teamIDStr string
+	if teamID != nil {
+		teamIDStr = teamID.String()
+	}
+
+	payload := map[string]any{
+		"id":                  transfer.ID.String(),
+		"call_log_id":        transfer.CallLogID.String(),
+		"whatsapp_call_id":   transfer.WhatsAppCallID,
+		"caller_phone":       transfer.CallerPhone,
+		"contact_id":         transfer.ContactID.String(),
+		"whatsapp_account":   transfer.WhatsAppAccount,
+		"team_id":            teamIDStr,
+		"initiating_agent_id": initiatingAgentID.String(),
+		"transferred_at":     transfer.TransferredAt.Format(time.RFC3339),
+	}
+
+	if targetAgentID != nil {
+		// Direct transfer: notify only the target agent
+		m.wsHub.BroadcastToUser(session.OrganizationID, *targetAgentID, websocket.WSMessage{
+			Type:    websocket.TypeCallTransferWaiting,
+			Payload: payload,
+		})
+	} else {
+		// Team transfer: broadcast to entire org
+		m.broadcastEvent(session.OrganizationID, websocket.TypeCallTransferWaiting, payload)
+	}
+
+	m.log.Info("Agent-initiated call transfer started",
+		"call_id", session.ID,
+		"transfer_id", transfer.ID,
+		"initiating_agent", initiatingAgentID,
+		"team_id", teamIDStr,
+	)
+
+	return nil
 }
 
 // ConnectAgentToTransfer handles an agent accepting a transfer. It creates a WebRTC
@@ -253,8 +454,15 @@ func (m *Manager) completeTransferConnection(session *CallSession, transferID, a
 
 	session.mu.Lock()
 	session.TransferStatus = models.CallTransferStatusConnected
-	callerRemote := session.CallerRemoteTrack
-	callerLocal := session.AudioTrack
+	var callerRemote *webrtc.TrackRemote
+	var callerLocal *webrtc.TrackLocalStaticRTP
+	if session.Direction == models.CallDirectionOutgoing {
+		callerRemote = session.WARemoteTrack
+		callerLocal = session.WAAudioTrack
+	} else {
+		callerRemote = session.CallerRemoteTrack
+		callerLocal = session.AudioTrack
+	}
 	agentLocal := session.AgentAudioTrack
 	session.mu.Unlock()
 
@@ -448,6 +656,9 @@ func (m *Manager) HandleCallerHangupDuringTransfer(session *CallSession) {
 	})
 
 	m.log.Info("Call transfer abandoned (caller hung up)", "transfer_id", transferID)
+
+	// Now that TransferStatus is no longer Waiting, cleanupSession will proceed.
+	m.cleanupSession(session.ID)
 }
 
 // findSessionByTransferID looks up a session by its transfer ID.

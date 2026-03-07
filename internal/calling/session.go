@@ -345,14 +345,25 @@ func (m *Manager) getOrgRingback(orgID uuid.UUID) string {
 func (m *Manager) cleanupSession(callID string) {
 	m.mu.Lock()
 	session, exists := m.sessions[callID]
-	if exists {
-		delete(m.sessions, callID)
-	}
-	m.mu.Unlock()
-
 	if !exists {
+		m.mu.Unlock()
 		return
 	}
+
+	// If a transfer is in the "waiting" state the agent's PC is being torn
+	// down intentionally. Don't destroy the whole session — the caller-side
+	// (or WA-side) PeerConnection must stay alive for hold music.
+	session.mu.Lock()
+	if session.TransferStatus == models.CallTransferStatusWaiting {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		m.log.Info("Skipping cleanup — transfer in waiting state", "call_id", callID)
+		return
+	}
+	session.mu.Unlock()
+
+	delete(m.sessions, callID)
+	m.mu.Unlock()
 
 	// Snapshot state and resources under lock, then release before calling external methods
 	session.mu.Lock()

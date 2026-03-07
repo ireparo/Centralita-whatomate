@@ -26,6 +26,7 @@ func (a *App) ListCallLogs(r *fastglue.Request) error {
 
 	query := a.DB.Where("call_logs.organization_id = ?", orgID).
 		Preload("Contact").
+		Preload("Agent").
 		Preload("IVRFlow").
 		Order("call_logs.created_at DESC")
 
@@ -119,7 +120,7 @@ func (a *App) GetCallLog(r *fastglue.Request) error {
 	}
 
 	var callLog models.CallLog
-	if err := query.Preload("Contact").Preload("IVRFlow").First(&callLog).Error; err != nil {
+	if err := query.Preload("Contact").Preload("Agent").Preload("IVRFlow").First(&callLog).Error; err != nil {
 		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Call log not found", nil, "")
 	}
 
@@ -131,7 +132,19 @@ func (a *App) GetCallLog(r *fastglue.Request) error {
 		}
 	}
 
-	return r.SendEnvelope(callLog)
+	// Fetch associated call transfers for this call log
+	var transfers []models.CallTransfer
+	a.DB.Where("call_log_id = ? AND organization_id = ?", callLog.ID, orgID).
+		Preload("Agent").
+		Preload("InitiatingAgent").
+		Preload("Team").
+		Order("created_at ASC").
+		Find(&transfers)
+
+	return r.SendEnvelope(map[string]any{
+		"call_log":   callLog,
+		"transfers":  transfers,
+	})
 }
 
 // GetCallRecording returns a presigned S3 URL for a call recording.

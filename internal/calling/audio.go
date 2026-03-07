@@ -28,6 +28,15 @@ func NewAudioPlayer(track *webrtc.TrackLocalStaticRTP) *AudioPlayer {
 	}
 }
 
+// SetSequence advances the player's RTP sequence number and timestamp so that
+// subsequent packets continue past the given high-water mark. This is used
+// after a bridge has forwarded agent RTP with high seq numbers — without this,
+// the receiver would drop the player's packets as "old".
+func (p *AudioPlayer) SetSequence(seq uint16, ts uint32) {
+	p.sequenceNumber = seq + 1
+	p.timestamp = ts + 960 // one frame ahead
+}
+
 // PlayFile plays an OGG/Opus audio file into the WebRTC track.
 // It parses the OGG container, splits pages into individual Opus packets
 // using the segment table, and sends each as a properly timed RTP packet.
