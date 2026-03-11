@@ -142,6 +142,7 @@ func (a *App) UpdateOrganizationSettings(r *fastglue.Request) error {
 	}
 
 	if err := a.DB.Save(&org).Error; err != nil {
+		a.Log.Error("Failed to update settings", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to update settings", nil, "")
 	}
 

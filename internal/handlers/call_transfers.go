@@ -40,6 +40,7 @@ func (a *App) ListCallTransfers(r *fastglue.Request) error {
 
 	var transfers []models.CallTransfer
 	if err := pg.Apply(query).Find(&transfers).Error; err != nil {
+		a.Log.Error("Failed to fetch call transfers", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to fetch call transfers", nil, "")
 	}
 

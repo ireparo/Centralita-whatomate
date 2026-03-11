@@ -79,6 +79,7 @@ func (a *App) ListCallLogs(r *fastglue.Request) error {
 
 	var callLogs []models.CallLog
 	if err := pg.Apply(query).Find(&callLogs).Error; err != nil {
+		a.Log.Error("Failed to fetch call logs", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to fetch call logs", nil, "")
 	}
 

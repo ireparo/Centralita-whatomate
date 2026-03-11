@@ -51,6 +51,7 @@ func (a *App) ListIVRFlows(r *fastglue.Request) error {
 
 	var flows []models.IVRFlow
 	if err := pg.Apply(query).Find(&flows).Error; err != nil {
+		a.Log.Error("Failed to fetch IVR flows", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to fetch IVR flows", nil, "")
 	}
 
@@ -276,6 +277,7 @@ func (a *App) DeleteIVRFlow(r *fastglue.Request) error {
 	}
 
 	if err := a.DB.Delete(flow).Error; err != nil {
+		a.Log.Error("Failed to delete IVR flow", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to delete IVR flow", nil, "")
 	}
 
@@ -328,6 +330,7 @@ func (a *App) UploadIVRAudio(r *fastglue.Request) error {
 	const maxAudioSize = 5 << 20 // 5MB
 	data, err := io.ReadAll(io.LimitReader(file, maxAudioSize+1))
 	if err != nil {
+		a.Log.Error("Failed to read IVR audio file", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to read file", nil, "")
 	}
 	if len(data) > maxAudioSize {
@@ -337,23 +340,23 @@ func (a *App) UploadIVRAudio(r *fastglue.Request) error {
 	// Validate MIME type
 	mimeType := fileHeader.Header.Get("Content-Type")
 	allowedAudio := map[string]bool{
-		"audio/ogg":             true,
-		"audio/opus":            true,
-		"audio/mpeg":            true,
-		"audio/mp3":             true,
-		"audio/aac":             true,
-		"audio/mp4":             true,
-		"audio/wav":             true,
-		"audio/x-wav":           true,
-		"audio/wave":            true,
-		"audio/webm":            true,
-		"audio/flac":            true,
-		"audio/x-flac":          true,
-		"audio/x-m4a":           true,
-		"audio/m4a":             true,
-		"application/ogg":       true,
+		"audio/ogg":                true,
+		"audio/opus":               true,
+		"audio/mpeg":               true,
+		"audio/mp3":                true,
+		"audio/aac":                true,
+		"audio/mp4":                true,
+		"audio/wav":                true,
+		"audio/x-wav":              true,
+		"audio/wave":               true,
+		"audio/webm":               true,
+		"audio/flac":               true,
+		"audio/x-flac":             true,
+		"audio/x-m4a":              true,
+		"audio/m4a":                true,
+		"application/ogg":          true,
 		"application/octet-stream": true, // fallback for unknown audio
-		"video/ogg":             true, // some browsers report .ogg as video/ogg
+		"video/ogg":                true, // some browsers report .ogg as video/ogg
 	}
 	if !allowedAudio[mimeType] {
 		a.Log.Error("Unsupported audio MIME type", "mime_type", mimeType, "filename", fileHeader.Filename)
@@ -370,12 +373,14 @@ func (a *App) UploadIVRAudio(r *fastglue.Request) error {
 	// Save uploaded file to a temp location for transcoding
 	tmpInput, err := os.CreateTemp("", "ivr-audio-input-*")
 	if err != nil {
+		a.Log.Error("Failed to create IVR temp file", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create temp file", nil, "")
 	}
 	defer func() { _ = os.Remove(tmpInput.Name()) }()
 
 	if _, err := tmpInput.Write(data); err != nil {
 		_ = tmpInput.Close()
+		a.Log.Error("Failed to write IVR temp file", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to write temp file", nil, "")
 	}
 	_ = tmpInput.Close()
@@ -415,6 +420,7 @@ func (a *App) ServeIVRAudio(r *fastglue.Request) error {
 	audioDir := a.getAudioDir()
 	baseDir, err := filepath.Abs(audioDir)
 	if err != nil {
+		a.Log.Error("Failed to resolve audio directory", "error", err, "audio_dir", audioDir)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Storage configuration error", nil, "")
 	}
 	fullPath, err := filepath.Abs(filepath.Join(baseDir, filename))
@@ -487,6 +493,7 @@ func (a *App) UploadOrgAudio(r *fastglue.Request) error {
 	const maxAudioSize = 5 << 20
 	data, err := io.ReadAll(io.LimitReader(file, maxAudioSize+1))
 	if err != nil {
+		a.Log.Error("Failed to read org audio file", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to read file", nil, "")
 	}
 	if len(data) > maxAudioSize {
@@ -509,18 +516,21 @@ func (a *App) UploadOrgAudio(r *fastglue.Request) error {
 	// Ensure audio directory exists
 	audioDir := a.getAudioDir()
 	if err := os.MkdirAll(audioDir, 0755); err != nil {
+		a.Log.Error("Failed to create org audio directory", "error", err, "audio_dir", audioDir)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create audio directory", nil, "")
 	}
 
 	// Save uploaded file to a temp location for transcoding
 	tmpInput, err := os.CreateTemp("", "org-audio-input-*")
 	if err != nil {
+		a.Log.Error("Failed to create org temp file", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to create temp file", nil, "")
 	}
 	defer func() { _ = os.Remove(tmpInput.Name()) }()
 
 	if _, err := tmpInput.Write(data); err != nil {
 		_ = tmpInput.Close()
+		a.Log.Error("Failed to write org temp file", "error", err)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to write temp file", nil, "")
 	}
 	_ = tmpInput.Close()
@@ -537,6 +547,7 @@ func (a *App) UploadOrgAudio(r *fastglue.Request) error {
 	// Update org settings with the new filename
 	var org models.Organization
 	if err := a.DB.Where("id = ?", orgID).First(&org).Error; err != nil {
+		a.Log.Error("Failed to load organization for audio update", "error", err, "org_id", orgID)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to load organization", nil, "")
 	}
 	if org.Settings == nil {
@@ -545,6 +556,7 @@ func (a *App) UploadOrgAudio(r *fastglue.Request) error {
 	settingsKey := audioType + "_file"
 	org.Settings[settingsKey] = filename
 	if err := a.DB.Save(&org).Error; err != nil {
+		a.Log.Error("Failed to update organization audio settings", "error", err, "org_id", orgID, "audio_type", audioType)
 		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to update organization settings", nil, "")
 	}
 
@@ -564,13 +576,13 @@ func transcodeToOpus(inputPath, outputPath string) error {
 	cmd := exec.Command("ffmpeg",
 		"-y",            // overwrite output
 		"-i", inputPath, // input file
-		"-ac", "1",      // mono
-		"-ar", "48000",  // 48kHz (Opus standard)
+		"-ac", "1", // mono
+		"-ar", "48000", // 48kHz (Opus standard)
 		"-c:a", "libopus",
 		"-b:a", "48k", // bitrate
 		"-application", "audio",
 		"-frame_duration", "20", // 20ms frames (matches RTP packetization)
-		"-vn",        // strip video/cover art
+		"-vn", // strip video/cover art
 		outputPath,
 	)
 
