@@ -443,6 +443,11 @@ func (m *Manager) executeTransfer(session *CallSession, node *IVRNode, ctx *IVRC
 	teamID, _ := node.Config["team_id"].(string)
 	m.saveIVRPath(session, ctx.Path)
 
+	// Parse and store HTTP callbacks from the transfer node config
+	session.mu.Lock()
+	session.TransferCallbacks = parseTransferCallbacks(node.Config)
+	session.mu.Unlock()
+
 	// Check if this transfer node has any outgoing edges — if not, terminal.
 	edges := graph.edgeMap[node.ID]
 	if len(edges) == 0 {
