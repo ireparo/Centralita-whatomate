@@ -43,6 +43,9 @@ type CallSession struct {
 	CallerRecorder *CallRecorder // caller's audio stream
 	AgentRecorder  *CallRecorder // agent's audio stream
 
+	// Transfer HTTP callbacks (configured per-node in IVR flow editor)
+	TransferCallbacks *TransferCallbacks
+
 	// Transfer fields
 	TransferID        uuid.UUID
 	TransferStatus    models.CallTransferStatus
@@ -87,6 +90,20 @@ const (
 	IVRNodeTiming       IVRNodeType = "timing"
 	IVRNodeHangup       IVRNodeType = "hangup"
 )
+
+// TransferHTTPCallback holds the configuration for a single transfer lifecycle HTTP callback.
+type TransferHTTPCallback struct {
+	URL          string            `json:"url"`
+	Method       string            `json:"method"`
+	Headers      map[string]string `json:"headers"`
+	BodyTemplate string            `json:"body_template"`
+}
+
+// TransferCallbacks holds optional HTTP callbacks for each transfer lifecycle event.
+type TransferCallbacks struct {
+	OnWaiting *TransferHTTPCallback
+	OnConnect *TransferHTTPCallback
+}
 
 // IVRNodePosition stores the (x,y) position for the visual editor.
 type IVRNodePosition struct {
