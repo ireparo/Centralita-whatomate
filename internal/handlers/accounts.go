@@ -309,7 +309,7 @@ func (a *App) TestAccountConnection(r *fastglue.Request) error {
 		a.Log.Error("Account test failed", "error", err, "account", account.Name)
 		return r.SendEnvelope(map[string]interface{}{
 			"success": false,
-			"error":   "Account credential validation failed. Check your access token and phone ID.",
+			"error":   fmt.Sprintf("Account credential validation failed: %s", err.Error()),
 		})
 	}
 
