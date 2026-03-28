@@ -8,7 +8,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Loader2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-vue-next'
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-vue-next'
+import { Skeleton } from '@/components/ui/skeleton'
 import PaginationControls from './PaginationControls.vue'
 import type { Component } from 'vue'
 import type { Column } from './types'
@@ -184,12 +185,19 @@ function getRowKey(item: T, index: number): string {
       </TableRow>
     </TableHeader>
     <TableBody>
-      <!-- Loading State -->
-      <TableRow v-if="isLoading">
-        <TableCell :colspan="columns.length" class="h-24 text-center">
-          <Loader2 class="h-6 w-6 animate-spin mx-auto" />
-        </TableCell>
-      </TableRow>
+      <!-- Loading State - Skeleton Rows -->
+      <template v-if="isLoading">
+        <TableRow v-for="row in 5" :key="`skeleton-${row}`">
+          <TableCell v-for="col in columns" :key="`skeleton-${row}-${col.key}`">
+            <Skeleton
+              :class="[
+                'h-4 skeleton-shimmer',
+                col.key === 'actions' ? 'w-16' : row % 3 === 0 ? 'w-3/4' : row % 3 === 1 ? 'w-1/2' : 'w-2/3',
+              ]"
+            />
+          </TableCell>
+        </TableRow>
+      </template>
 
       <!-- Empty State -->
       <TableRow v-else-if="sortedItems.length === 0">
