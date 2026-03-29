@@ -162,56 +162,76 @@ const listPickerOpen = ref(false)
 
 // Panel resize
 const propertiesPanelWidth = ref(500)
-const stepsPanelWidth = ref(400)
+const stepsPanelWidth = ref(240)
 const isResizingRight = ref(false)
 const isResizingLeft = ref(false)
 const minPanelWidth = 200
 const maxPanelWidth = 500
-const minStepsPanelWidth = 200
+const minStepsPanelWidth = 180
 const maxStepsPanelWidth = 400
+
+// Direct DOM refs for instant resize (no Vue reactivity lag)
+let leftPanelEl: HTMLElement | null = null
+let rightPanelEl: HTMLElement | null = null
+let containerEl: HTMLElement | null = null
+
+function setResizeStyles() {
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  document.body.classList.add('resizing')
+  // Cache elements
+  containerEl = document.querySelector('.flow-builder-panels')
+  leftPanelEl = containerEl?.querySelector('[data-panel="left"]') as HTMLElement | null
+  rightPanelEl = containerEl?.querySelector('[data-panel="right"]') as HTMLElement | null
+}
+
+function clearResizeStyles() {
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  document.body.classList.remove('resizing')
+}
 
 function startResizeRight(_e: MouseEvent) {
   isResizingRight.value = true
+  setResizeStyles()
   document.addEventListener('mousemove', handleResizeRight)
   document.addEventListener('mouseup', stopResizeRight)
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
 }
 
 function handleResizeRight(e: MouseEvent) {
-  if (!isResizingRight.value) return
-  const newWidth = window.innerWidth - e.clientX
-  propertiesPanelWidth.value = Math.min(Math.max(newWidth, minPanelWidth), maxPanelWidth)
+  const w = Math.min(Math.max(window.innerWidth - e.clientX, minPanelWidth), maxPanelWidth)
+  if (rightPanelEl) rightPanelEl.style.width = w + 'px'
 }
 
 function stopResizeRight() {
   isResizingRight.value = false
   document.removeEventListener('mousemove', handleResizeRight)
   document.removeEventListener('mouseup', stopResizeRight)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
+  // Sync ref from DOM
+  if (rightPanelEl) propertiesPanelWidth.value = rightPanelEl.offsetWidth
+  clearResizeStyles()
 }
 
 function startResizeLeft(_e: MouseEvent) {
   isResizingLeft.value = true
+  setResizeStyles()
   document.addEventListener('mousemove', handleResizeLeft)
   document.addEventListener('mouseup', stopResizeLeft)
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
 }
 
 function handleResizeLeft(e: MouseEvent) {
-  if (!isResizingLeft.value) return
-  const newWidth = e.clientX
-  stepsPanelWidth.value = Math.min(Math.max(newWidth, minStepsPanelWidth), maxStepsPanelWidth)
+  const offsetLeft = containerEl?.getBoundingClientRect().left ?? 0
+  const w = Math.min(Math.max(e.clientX - offsetLeft, minStepsPanelWidth), maxStepsPanelWidth)
+  if (leftPanelEl) leftPanelEl.style.width = w + 'px'
 }
 
 function stopResizeLeft() {
   isResizingLeft.value = false
   document.removeEventListener('mousemove', handleResizeLeft)
   document.removeEventListener('mouseup', stopResizeLeft)
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
+  // Sync ref from DOM
+  if (leftPanelEl) stepsPanelWidth.value = leftPanelEl.offsetWidth
+  clearResizeStyles()
 }
 
 // Collapsible states for properties panel
@@ -271,6 +291,7 @@ const formData = ref({
   on_complete_action: 'none',
   completion_config: { ...defaultWebhookConfig },
   panel_config: { sections: [] } as PanelConfig,
+  canvas_layout: {} as Record<string, any>,
   enabled: true,
   steps: [] as FlowStep[]
 })
@@ -436,6 +457,7 @@ async function loadFlow(id: string) {
       panel_config: {
         sections: (flow.panel_config || flow.PanelConfig || {}).sections || []
       },
+      canvas_layout: flow.canvas_layout || {},
       enabled: flow.is_enabled ?? flow.IsEnabled ?? flow.enabled ?? true,
       steps: (flow.steps || flow.Steps || []).map((s: any, idx: number) => ({
         id: s.id || s.ID,
@@ -493,6 +515,11 @@ function selectStep(index: number) {
   previewMode.value = 'edit'
 }
 
+function selectStepFromCanvas(index: number) {
+  selectedStepIndex.value = index
+  // Keep canvas visible, just update right panel to show step properties
+}
+
 function selectFlowSettings() {
   showFlowSettings.value = true
   selectedStepIndex.value = null
@@ -502,6 +529,68 @@ function selectFlowSettings() {
 function openPreview() {
   showFlowSettings.value = false
   previewMode.value = 'preview'
+}
+
+function onConnectSteps(sourceStep: string, targetStep: string, sourceHandle: string) {
+  const step = formData.value.steps.find(s => s.step_name === sourceStep)
+  if (!step) return
+
+  if (sourceHandle === 'default') {
+    // Non-button step: set next_step
+    step.next_step = targetStep
+  } else {
+    // Button step: set conditional_next for this button
+    if (!step.conditional_next) step.conditional_next = {}
+    step.conditional_next[sourceHandle] = targetStep
+  }
+  hasUnsavedChanges.value = true
+}
+
+function onUpdateCanvasLayout(layout: Record<string, any>) {
+  formData.value.canvas_layout = layout
+  hasUnsavedChanges.value = true
+}
+
+function onChangeStepType(stepIndex: number, newType: string) {
+  const sorted = [...formData.value.steps].sort((a, b) => a.step_order - b.step_order)
+  const step = sorted[stepIndex]
+  if (!step) return
+
+  const actual = formData.value.steps.find(s => s.step_name === step.step_name)
+  if (!actual) return
+
+  actual.message_type = newType
+
+  // Reset type-specific fields when changing type
+  if (newType !== 'buttons') {
+    actual.buttons = []
+    actual.conditional_next = {}
+  }
+  if (newType !== 'api_fetch') {
+    actual.api_config = { url: '', method: 'GET', headers: {}, body: '', fallback_message: '', response_mapping: {} }
+  }
+  if (newType !== 'transfer') {
+    actual.transfer_config = { team_id: '_general', notes: '' }
+  }
+  if (newType === 'transfer') {
+    actual.input_type = 'none'
+  }
+
+  hasUnsavedChanges.value = true
+}
+
+function onDisconnectSteps(sourceStep: string, sourceHandle: string) {
+  const step = formData.value.steps.find(s => s.step_name === sourceStep)
+  if (!step) return
+
+  if (sourceHandle === 'default') {
+    step.next_step = ''
+  } else {
+    if (step.conditional_next) {
+      delete step.conditional_next[sourceHandle]
+    }
+  }
+  hasUnsavedChanges.value = true
 }
 
 function confirmDeleteStep(index: number) {
@@ -803,6 +892,7 @@ async function saveFlow() {
       on_complete_action: formData.value.on_complete_action,
       completion_config: formData.value.on_complete_action === 'webhook' ? formData.value.completion_config : {},
       panel_config: formData.value.panel_config,
+      canvas_layout: formData.value.canvas_layout,
       enabled: formData.value.enabled,
       steps: formData.value.steps.map((step, idx) => ({
         ...step,
@@ -897,9 +987,10 @@ function confirmCancel() {
     </div>
 
     <!-- Main 3-panel layout -->
-    <div v-else class="flex-1 flex overflow-hidden">
+    <div v-else class="flow-builder-panels flex-1 flex overflow-hidden">
       <!-- Steps Panel (Left) -->
       <Card
+        data-panel="left"
         class="flex-shrink-0 rounded-none border-y-0 border-l-0 flex flex-col"
         :style="{ width: stepsPanelWidth + 'px' }"
       >
@@ -995,10 +1086,16 @@ function confirmCancel() {
             :flow-name="formData.name"
             :initial-message="formData.initial_message"
             :completion-message="formData.completion_message"
-            @select-step="selectStep"
+            :teams="teams"
+            :canvas-layout="formData.canvas_layout"
+            @select-step="selectStepFromCanvas"
             @add-step="addStep"
             @select-flow-settings="selectFlowSettings"
             @open-preview="openPreview"
+            @connect-steps="onConnectSteps"
+            @disconnect-steps="onDisconnectSteps"
+            @change-step-type="onChangeStepType"
+            @update-canvas-layout="onUpdateCanvasLayout"
           />
         </template>
 
@@ -1029,17 +1126,18 @@ function confirmCancel() {
 
       <!-- Properties Panel (Right) -->
       <Card
+        data-panel="right"
         class="flex-shrink-0 rounded-none border-y-0 border-r-0 flex flex-col"
         :style="{ width: propertiesPanelWidth + 'px' }"
       >
         <CardHeader class="py-3 px-4 border-b">
           <CardTitle class="text-sm font-medium">
-            {{ showFlowSettings ? $t('flowBuilder.flowSettings') : $t('flowBuilder.stepProperties') }}
+            {{ (showFlowSettings && selectedStepIndex === null) ? $t('flowBuilder.flowSettings') : $t('flowBuilder.stepProperties') }}
           </CardTitle>
         </CardHeader>
 
-        <!-- Flow Settings -->
-        <ScrollArea class="flex-1" v-if="showFlowSettings">
+        <!-- Flow Settings (only when no step selected) -->
+        <ScrollArea class="flex-1" v-if="showFlowSettings && selectedStepIndex === null">
           <div class="p-4 space-y-4">
             <!-- Trigger Keywords -->
             <div class="space-y-1.5">
@@ -1735,3 +1833,12 @@ function confirmCancel() {
     </AlertDialog>
   </div>
 </template>
+
+<style>
+/* Prevent pointer events on canvas/iframes during panel resize */
+body.resizing .vue-flow,
+body.resizing iframe,
+body.resizing canvas {
+  pointer-events: none !important;
+}
+</style>

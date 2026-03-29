@@ -156,7 +156,8 @@ type ChatbotFlow struct {
 	CompletionConfig   JSONB       `gorm:"type:jsonb" json:"completion_config"`
 	TimeoutMessage     string      `gorm:"type:text" json:"timeout_message"`
 	CancelKeywords     StringArray `gorm:"type:jsonb" json:"cancel_keywords"`
-	PanelConfig        JSONB       `gorm:"type:jsonb;default:'{}'" json:"panel_config"` // Contact info panel configuration
+	PanelConfig        JSONB       `gorm:"type:jsonb;default:'{}'" json:"panel_config"`  // Contact info panel configuration
+	CanvasLayout       JSONB       `gorm:"type:jsonb;default:'{}'" json:"canvas_layout"` // Node positions for flow diagram
 
 	// Relations
 	Organization    *Organization     `gorm:"foreignKey:OrganizationID" json:"organization,omitempty"`

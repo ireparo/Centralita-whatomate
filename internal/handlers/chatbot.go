@@ -748,6 +748,7 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 		OnCompleteAction  string                 `json:"on_complete_action"`
 		CompletionConfig  map[string]interface{} `json:"completion_config"`
 		PanelConfig       map[string]interface{} `json:"panel_config"`
+		CanvasLayout      map[string]interface{} `json:"canvas_layout"`
 		Enabled           bool                   `json:"enabled"`
 		Steps             []FlowStepRequest      `json:"steps"`
 	}
@@ -775,6 +776,7 @@ func (a *App) CreateChatbotFlow(r *fastglue.Request) error {
 		OnCompleteAction:  req.OnCompleteAction,
 		CompletionConfig:  models.JSONB(req.CompletionConfig),
 		PanelConfig:       models.JSONB(req.PanelConfig),
+		CanvasLayout:      models.JSONB(req.CanvasLayout),
 		IsEnabled:         req.Enabled,
 	}
 
@@ -895,6 +897,7 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 		OnCompleteAction  *string                `json:"on_complete_action"`
 		CompletionConfig  map[string]interface{} `json:"completion_config"`
 		PanelConfig       map[string]interface{} `json:"panel_config"`
+		CanvasLayout      map[string]interface{} `json:"canvas_layout"`
 		Enabled           *bool                  `json:"enabled"`
 		Steps             []FlowStepRequest      `json:"steps"`
 	}
@@ -928,6 +931,9 @@ func (a *App) UpdateChatbotFlow(r *fastglue.Request) error {
 	}
 	if req.PanelConfig != nil {
 		flow.PanelConfig = models.JSONB(req.PanelConfig)
+	}
+	if req.CanvasLayout != nil {
+		flow.CanvasLayout = models.JSONB(req.CanvasLayout)
 	}
 	if req.Enabled != nil {
 		flow.IsEnabled = *req.Enabled
