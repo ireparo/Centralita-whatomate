@@ -23,7 +23,7 @@ const outputHandles = computed(() => {
     <template #icon><MousePointerClick class="w-4 h-4" /></template>
     <div v-if="buttons.length > 0" class="space-y-0.5">
       <div v-for="(btn, idx) in buttons" :key="btn.id" class="flex gap-1" :title="btn.title">
-        <span class="font-mono font-bold">{{ idx + 1 }}:</span>
+        <span class="font-mono font-bold">{{ Number(idx) + 1 }}:</span>
         <span class="truncate">{{ btn.title || '—' }}</span>
       </div>
     </div>

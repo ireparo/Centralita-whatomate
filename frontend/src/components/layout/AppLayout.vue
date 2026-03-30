@@ -18,7 +18,7 @@ import OrganizationSwitcher from './OrganizationSwitcher.vue'
 import UserMenu from './UserMenu.vue'
 import ActiveCallPanel from '@/components/calling/ActiveCallPanel.vue'
 import { ScrollToTop } from '@/components/shared'
-import { navigationItems } from './navigation'
+import { navigationSections, type NavSection } from './navigation'
 
 useI18n() // Enable $t() in template
 
@@ -45,9 +45,8 @@ onMounted(() => {
   }
 })
 
-// Filter navigation based on user permissions
-const navigation = computed(() => {
-  return navigationItems
+function filterItems(items: NavSection['items']) {
+  return items
     .filter(item => {
       if (item.childPermissions) {
         return item.childPermissions.some(p => authStore.hasPermission(p, 'read'))
@@ -78,7 +77,20 @@ const navigation = computed(() => {
         children: filteredChildren
       }
     })
+}
+
+// Filter navigation sections based on user permissions
+const navSections = computed(() => {
+  return navigationSections
+    .map(section => ({
+      ...section,
+      items: filterItems(section.items)
+    }))
+    .filter(section => section.items.length > 0)
 })
+
+const mainSections = computed(() => navSections.value.filter(s => !s.pinBottom))
+const bottomSections = computed(() => navSections.value.filter(s => s.pinBottom))
 
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value
@@ -168,8 +180,68 @@ const handleLogout = async () => {
 
       <!-- Navigation -->
       <ScrollArea class="flex-1 py-2">
-        <nav class="space-y-0.5 px-2" role="menubar">
-          <template v-for="item in navigation" :key="item.path">
+        <nav class="px-2" role="menubar">
+          <template v-for="(section, sIdx) in mainSections" :key="section.label">
+            <!-- Section header -->
+            <div
+              v-if="section.label && !isCollapsed"
+              :class="['px-2.5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/30 light:text-gray-400', sIdx === 0 && 'pt-1']"
+            >
+              {{ $t(section.label) }}
+            </div>
+            <div v-else-if="sIdx > 0" :class="['my-2 mx-2.5 border-t border-white/[0.06] light:border-gray-200', isCollapsed && 'mx-1']" />
+
+            <!-- Section items -->
+            <div class="space-y-0.5">
+              <template v-for="item in section.items" :key="item.path">
+                <RouterLink
+                  :to="item.path"
+                  :class="[
+                    'nav-active-indicator btn-press flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-200',
+                    item.active
+                      ? 'bg-white/[0.08] text-white light:bg-gray-100 light:text-gray-900'
+                      : 'text-white/50 hover:text-white hover:bg-white/[0.06] light:text-gray-500 light:hover:text-gray-900 light:hover:bg-gray-50',
+                    isCollapsed && 'md:justify-center md:px-2'
+                  ]"
+                  :data-active="item.active"
+                  role="menuitem"
+                  :aria-current="item.active ? 'page' : undefined"
+                  @click="isMobileMenuOpen = false"
+                >
+                  <component :is="item.icon" class="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span :class="isCollapsed && 'md:sr-only'">{{ $t(item.name) }}</span>
+                </RouterLink>
+
+                <!-- Submenu items -->
+                <template v-if="item.children && item.active && !isCollapsed">
+                  <RouterLink
+                    v-for="child in item.children"
+                    :key="child.path"
+                    :to="child.path"
+                    :class="[
+                      'flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-all duration-200 ml-4',
+                      route.path === child.path
+                        ? 'bg-white/[0.06] text-white light:bg-gray-100 light:text-gray-900'
+                        : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04] light:text-gray-400 light:hover:text-gray-700 light:hover:bg-gray-50'
+                    ]"
+                    role="menuitem"
+                    :aria-current="route.path === child.path ? 'page' : undefined"
+                    @click="isMobileMenuOpen = false"
+                  >
+                    <component :is="child.icon" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    <span>{{ $t(child.name) }}</span>
+                  </RouterLink>
+                </template>
+              </template>
+            </div>
+          </template>
+        </nav>
+      </ScrollArea>
+
+      <!-- Bottom-pinned navigation (Settings) -->
+      <div v-if="bottomSections.length > 0" class="border-t border-white/[0.06] light:border-gray-200 px-2 py-2">
+        <template v-for="section in bottomSections" :key="section.label">
+          <template v-for="item in section.items" :key="item.path">
             <RouterLink
               :to="item.path"
               :class="[
@@ -188,7 +260,6 @@ const handleLogout = async () => {
               <span :class="isCollapsed && 'md:sr-only'">{{ $t(item.name) }}</span>
             </RouterLink>
 
-            <!-- Submenu items -->
             <template v-if="item.children && item.active && !isCollapsed">
               <RouterLink
                 v-for="child in item.children"
@@ -209,8 +280,8 @@ const handleLogout = async () => {
               </RouterLink>
             </template>
           </template>
-        </nav>
-      </ScrollArea>
+        </template>
+      </div>
 
       <!-- User Menu -->
       <UserMenu :collapsed="isCollapsed" @logout="handleLogout" />
