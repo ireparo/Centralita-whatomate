@@ -440,13 +440,31 @@ onMounted(async () => {
     />
 
     <!-- Sidebar -->
-    <template v-if="!isNew" #sidebar>
+    <template #sidebar>
       <MetadataPanel
+        v-if="!isNew"
         :created-at="account?.created_at"
         :updated-at="account?.updated_at"
         :created-by-name="account?.created_by_name"
         :updated-by-name="account?.updated_by_name"
       />
+
+      <!-- Setup Guide -->
+      <Card>
+        <CardHeader class="pb-3">
+          <CardTitle class="text-sm font-medium">{{ $t('accounts.setupGuide', 'Setup Guide') }}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ol class="list-decimal list-inside space-y-2.5 text-sm text-muted-foreground">
+            <li>{{ $t('accounts.setupStep1', 'Go to') }} <a href="https://developers.facebook.com" target="_blank" class="text-primary hover:underline">Meta Developer Console</a> {{ $t('accounts.setupStep1End', 'and create an app') }}</li>
+            <li>{{ $t('accounts.setupStep2', 'Add WhatsApp product to your app') }}</li>
+            <li>{{ $t('accounts.setupStep3', 'Copy') }} <strong>{{ $t('accounts.setupStep3Bold1', 'Phone Number ID') }}</strong> {{ $t('accounts.setupStep3And', 'and') }} <strong>{{ $t('accounts.setupStep3Bold2', 'Business Account ID') }}</strong></li>
+            <li>{{ $t('accounts.setupStep4', 'Generate a permanent token from') }} <a href="https://business.facebook.com/settings/system-users" target="_blank" class="text-primary hover:underline">Business Settings</a></li>
+            <li>{{ $t('accounts.setupStep5', 'Configure the webhook URL and verify token in Meta dashboard') }}</li>
+            <li>{{ $t('accounts.setupStep6', 'Click Test Connection to verify') }}</li>
+          </ol>
+        </CardContent>
+      </Card>
     </template>
   </DetailPageLayout>
 
