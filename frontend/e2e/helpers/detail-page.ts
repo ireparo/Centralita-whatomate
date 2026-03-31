@@ -68,5 +68,7 @@ export async function navigateToFirstItem(page: Page): Promise<string | null> {
 
   await page.goto(href)
   await page.waitForLoadState('networkidle')
+  // Wait for lazy-loaded panels (audit log, metadata) to render
+  await page.waitForTimeout(2000)
   return href
 }
