@@ -120,12 +120,14 @@ onMounted(() => loadLogs())
               <div
                 v-for="(change, idx) in log.changes"
                 :key="idx"
-                class="text-xs rounded-md bg-muted/50 px-2.5 py-1.5 flex items-start gap-1.5"
+                class="text-xs rounded-md bg-muted/50 px-2.5 py-1.5 overflow-hidden"
               >
-                <span class="font-medium text-foreground shrink-0">{{ formatFieldName(change.field) }}:</span>
-                <span class="text-muted-foreground">{{ formatValue(change.old_value) }}</span>
-                <span class="text-muted-foreground">→</span>
-                <span class="text-foreground">{{ formatValue(change.new_value) }}</span>
+                <span class="font-medium text-foreground">{{ formatFieldName(change.field) }}:</span>
+                <div class="mt-0.5 text-muted-foreground break-words">
+                  <span>{{ formatValue(change.old_value) }}</span>
+                  <span class="mx-1">→</span>
+                  <span class="text-foreground">{{ formatValue(change.new_value) }}</span>
+                </div>
               </div>
             </div>
 
