@@ -159,6 +159,12 @@ const router = createRouter({
           meta: { permission: 'accounts' }
         },
         {
+          path: 'settings/accounts/:id',
+          name: 'account-detail',
+          component: () => import('@/views/settings/AccountDetailView.vue'),
+          meta: { permission: 'accounts' }
+        },
+        {
           path: 'settings/canned-responses',
           name: 'canned-responses',
           component: () => import('@/views/settings/CannedResponsesView.vue'),
@@ -192,6 +198,12 @@ const router = createRouter({
           path: 'settings/teams',
           name: 'teams',
           component: () => import('@/views/settings/TeamsView.vue'),
+          meta: { permission: 'teams' }
+        },
+        {
+          path: 'settings/teams/:id',
+          name: 'team-detail',
+          component: () => import('@/views/settings/TeamDetailView.vue'),
           meta: { permission: 'teams' }
         },
         {

@@ -110,6 +110,7 @@ func GetMigrationModels() []MigrationModel {
 		{"IVRFlow", &models.IVRFlow{}},
 		{"CallTransfer", &models.CallTransfer{}},
 		{"CallPermission", &models.CallPermission{}},
+		{"AuditLog", &models.AuditLog{}},
 	}
 }
 

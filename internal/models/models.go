@@ -168,16 +168,20 @@ func (UserAvailabilityLog) TableName() string {
 // Team represents a group of agents handling specific types of chats
 type Team struct {
 	BaseModel
-	OrganizationID     uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
-	Name               string    `gorm:"size:100;not null" json:"name"`
-	Description        string    `gorm:"size:500" json:"description"`
+	OrganizationID      uuid.UUID          `gorm:"type:uuid;index;not null" json:"organization_id"`
+	Name                string             `gorm:"size:100;not null" json:"name"`
+	Description         string             `gorm:"size:500" json:"description"`
 	AssignmentStrategy  AssignmentStrategy `gorm:"size:50;default:'round_robin'" json:"assignment_strategy"` // round_robin, load_balanced, manual
 	PerAgentTimeoutSecs int                `gorm:"default:0" json:"per_agent_timeout_secs"`                  // 0 = use org/global default
 	IsActive            bool               `gorm:"default:true" json:"is_active"`
+	CreatedByID         *uuid.UUID         `gorm:"type:uuid" json:"created_by_id,omitempty"`
+	UpdatedByID         *uuid.UUID         `gorm:"type:uuid" json:"updated_by_id,omitempty"`
 
 	// Relations
 	Organization *Organization `gorm:"foreignKey:OrganizationID" json:"organization,omitempty"`
 	Members      []TeamMember  `gorm:"foreignKey:TeamID" json:"members,omitempty"`
+	CreatedBy    *User         `gorm:"foreignKey:CreatedByID" json:"created_by,omitempty"`
+	UpdatedBy    *User         `gorm:"foreignKey:UpdatedByID" json:"updated_by,omitempty"`
 }
 
 func (Team) TableName() string {
@@ -288,22 +292,26 @@ func (CustomAction) TableName() string {
 // WhatsAppAccount represents a WhatsApp Business Account
 type WhatsAppAccount struct {
 	BaseModel
-	OrganizationID     uuid.UUID `gorm:"type:uuid;index;not null" json:"organization_id"`
-	Name               string    `gorm:"size:100;uniqueIndex:idx_wa_org_name;not null" json:"name"` // Unique per org, used as reference
-	AppID              string    `gorm:"size:100" json:"app_id"`                                    // Meta App ID
-	PhoneID            string    `gorm:"size:100;not null" json:"phone_id"`
-	BusinessID         string    `gorm:"size:100;not null" json:"business_id"`
-	AccessToken        string    `gorm:"type:text;not null" json:"-"` // encrypted
-	AppSecret          string    `gorm:"size:255" json:"-"`           // Meta App Secret for webhook signature verification
-	WebhookVerifyToken string    `gorm:"size:255" json:"webhook_verify_token"`
-	APIVersion         string    `gorm:"size:20;default:'v21.0'" json:"api_version"`
-	IsDefaultIncoming  bool      `gorm:"default:false" json:"is_default_incoming"`
-	IsDefaultOutgoing  bool      `gorm:"default:false" json:"is_default_outgoing"`
-	AutoReadReceipt    bool      `gorm:"default:false" json:"auto_read_receipt"`
-	Status             string    `gorm:"size:20;default:'active'" json:"status"`
+	OrganizationID     uuid.UUID  `gorm:"type:uuid;index;not null" json:"organization_id"`
+	Name               string     `gorm:"size:100;uniqueIndex:idx_wa_org_name;not null" json:"name"` // Unique per org, used as reference
+	AppID              string     `gorm:"size:100" json:"app_id"`                                    // Meta App ID
+	PhoneID            string     `gorm:"size:100;not null" json:"phone_id"`
+	BusinessID         string     `gorm:"size:100;not null" json:"business_id"`
+	AccessToken        string     `gorm:"type:text;not null" json:"-"` // encrypted
+	AppSecret          string     `gorm:"size:255" json:"-"`           // Meta App Secret for webhook signature verification
+	WebhookVerifyToken string     `gorm:"size:255" json:"webhook_verify_token"`
+	APIVersion         string     `gorm:"size:20;default:'v21.0'" json:"api_version"`
+	IsDefaultIncoming  bool       `gorm:"default:false" json:"is_default_incoming"`
+	IsDefaultOutgoing  bool       `gorm:"default:false" json:"is_default_outgoing"`
+	AutoReadReceipt    bool       `gorm:"default:false" json:"auto_read_receipt"`
+	Status             string     `gorm:"size:20;default:'active'" json:"status"`
+	CreatedByID        *uuid.UUID `gorm:"type:uuid" json:"created_by_id,omitempty"`
+	UpdatedByID        *uuid.UUID `gorm:"type:uuid" json:"updated_by_id,omitempty"`
 
 	// Relations
 	Organization *Organization `gorm:"foreignKey:OrganizationID" json:"organization,omitempty"`
+	CreatedBy    *User         `gorm:"foreignKey:CreatedByID" json:"created_by,omitempty"`
+	UpdatedBy    *User         `gorm:"foreignKey:UpdatedByID" json:"updated_by,omitempty"`
 }
 
 func (WhatsAppAccount) TableName() string {
@@ -480,4 +488,21 @@ type WidgetFilter struct {
 	Field    string `json:"field"`    // status, direction, type, etc.
 	Operator string `json:"operator"` // equals, not_equals, contains, gt, lt, gte, lte
 	Value    string `json:"value"`
+}
+
+// AuditLog represents a record-level audit trail entry
+type AuditLog struct {
+	ID             uuid.UUID   `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	OrganizationID uuid.UUID   `gorm:"type:uuid;index;not null" json:"organization_id"`
+	ResourceType   string      `gorm:"size:50;not null;index:idx_audit_resource" json:"resource_type"`
+	ResourceID     uuid.UUID   `gorm:"type:uuid;not null;index:idx_audit_resource" json:"resource_id"`
+	UserID         uuid.UUID   `gorm:"type:uuid;not null" json:"user_id"`
+	UserName       string      `gorm:"size:255;not null" json:"user_name"`
+	Action         AuditAction `gorm:"size:20;not null" json:"action"`
+	Changes        JSONBArray  `gorm:"type:jsonb;default:'[]'" json:"changes"`
+	CreatedAt      time.Time   `gorm:"autoCreateTime;index:idx_audit_resource" json:"created_at"`
+}
+
+func (AuditLog) TableName() string {
+	return "audit_logs"
 }

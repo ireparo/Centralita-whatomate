@@ -693,6 +693,11 @@ export interface Team {
   per_agent_timeout_secs: number
   is_active: boolean
   member_count: number
+  members?: TeamMember[]
+  created_by_id?: string
+  created_by_name?: string
+  updated_by_id?: string
+  updated_by_name?: string
   created_at: string
   updated_at: string
 }
@@ -740,6 +745,33 @@ export const teamsService = {
     api.post<{ member: TeamMember }>(`/teams/${teamId}/members`, data),
   removeMember: (teamId: string, userId: string) =>
     api.delete(`/teams/${teamId}/members/${userId}`)
+}
+
+// Audit Logs
+export interface AuditLogChange {
+  field: string
+  old_value: any
+  new_value: any
+}
+
+export interface AuditLogEntry {
+  id: string
+  resource_type: string
+  resource_id: string
+  user_name: string
+  action: 'created' | 'updated' | 'deleted'
+  changes: AuditLogChange[]
+  created_at: string
+}
+
+export const auditLogsService = {
+  list: (params: {
+    resource_type: string
+    resource_id: string
+    page?: number
+    limit?: number
+  }) =>
+    api.get<{ audit_logs: AuditLogEntry[]; total: number }>('/audit-logs', { params }),
 }
 
 export const webhooksService = {

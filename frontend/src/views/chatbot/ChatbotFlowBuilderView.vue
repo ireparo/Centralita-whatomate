@@ -57,6 +57,7 @@ import {
 import draggable from 'vuedraggable'
 import FlowChart from '@/components/chatbot/flow-builder/FlowChart.vue'
 import FlowPreviewPanel from '@/components/chatbot/flow-preview/FlowPreviewPanel.vue'
+import UnsavedChangesDialog from '@/components/shared/UnsavedChangesDialog.vue'
 
 interface ApiConfig {
   url: string
@@ -1831,20 +1832,7 @@ function confirmCancel() {
     </AlertDialog>
 
     <!-- Cancel Dialog -->
-    <AlertDialog v-model:open="cancelDialogOpen">
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{{ $t('flowBuilder.unsavedChanges') }}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {{ $t('flowBuilder.unsavedChangesConfirm') }}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>{{ $t('flowBuilder.stay') }}</AlertDialogCancel>
-          <AlertDialogAction @click="confirmCancel">{{ $t('flowBuilder.leave') }}</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <UnsavedChangesDialog :open="cancelDialogOpen" @stay="cancelDialogOpen = false" @leave="confirmCancel" />
   </div>
 </template>
 
