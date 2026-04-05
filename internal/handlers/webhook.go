@@ -613,8 +613,8 @@ func verifyWebhookSignature(body, signature, appSecret []byte) bool {
 func (a *App) processMarketingPreference(phoneNumberID, userPhone, bsuid, value string) {
 	// Find the WhatsApp account by phone_number_id
 	var account models.WhatsAppAccount
-	if err := a.DB.Where("phone_number_id = ?", phoneNumberID).First(&account).Error; err != nil {
-		a.Log.Error("Failed to find account for marketing preference", "error", err, "phone_number_id", phoneNumberID)
+	if err := a.DB.Where("phone_id = ?", phoneNumberID).First(&account).Error; err != nil {
+		a.Log.Error("Failed to find account for marketing preference", "error", err, "phone_id", phoneNumberID)
 		return
 	}
 
