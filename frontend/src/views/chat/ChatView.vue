@@ -819,8 +819,9 @@ async function sendTemplateMessage() {
     templateParamValues.value = {}
     clearTemplateHeaderMedia()
     templateButtonUrlParams.value = []
-  } catch {
-    toast.error(t('chat.templateSendFailed'))
+  } catch (error: any) {
+    const message = error.response?.data?.message || t('chat.templateSendFailed')
+    toast.error(message)
   } finally {
     isSendingTemplate.value = false
   }
