@@ -83,6 +83,8 @@ const authStore = useAuthStore()
 
 const bodyHint = 'Use {{1}}, {{2}} for positional or {{name}}, {{email}} for named parameters.'
 const mixedVariablesHint = 'Cannot mix positional ({{1}}, {{2}}) and named ({{name}}) variables. Use one type only.'
+const duplicateVariablesHint = 'Duplicate variables found. Each variable should appear only once in the template.'
+const variablePositionHint = 'Variables cannot be at the very start or end of the template body.'
 
 const templateId = computed(() => route.params.id as string)
 const isNew = computed(() => templateId.value === 'new')
@@ -162,6 +164,22 @@ const hasMixedVariables = computed(() => {
   const hasPositional = vars.some(v => /^\d+$/.test(v.name))
   const hasNamed = vars.some(v => !/^\d+$/.test(v.name))
   return hasPositional && hasNamed
+})
+
+// Detect duplicate positional variables (e.g. {{1}} used twice) — named params can repeat
+const hasDuplicateVariables = computed(() => {
+  const isPositional = (v: string) => /^\d+$/.test(v)
+  const bodyNums = bodyVariables.value.filter(isPositional)
+  const headerNums = headerVariables.value.filter(isPositional)
+  return bodyNums.length !== new Set(bodyNums).size
+    || headerNums.length !== new Set(headerNums).size
+})
+
+// Detect variables at the start or end of body content (Meta restriction)
+const hasVariableAtEdge = computed(() => {
+  const body = form.value.body_content.trim()
+  if (!body) return false
+  return /^\{\{[^}]+\}\}/.test(body) || /\{\{[^}]+\}\}$/.test(body)
 })
 
 // Build sample_values array from form inputs
@@ -365,6 +383,14 @@ async function save() {
   }
   if (hasMixedVariables.value) {
     toast.error(t('templates.mixedVariables', 'Cannot mix positional ({{1}}, {{2}}) and named ({{name}}) variables. Use one type only.'))
+    return
+  }
+  if (hasDuplicateVariables.value) {
+    toast.error(t('templates.duplicateVariables', 'Duplicate variables found. Each variable should appear only once.'))
+    return
+  }
+  if (hasVariableAtEdge.value) {
+    toast.error(t('templates.variableAtEdge', 'Variables cannot be at the very start or end of the template body.'))
     return
   }
   isSaving.value = true
@@ -695,6 +721,8 @@ onMounted(async () => {
             :disabled="!canWrite || !isEditable"
           />
           <p v-if="hasMixedVariables" class="text-xs text-destructive" v-text="mixedVariablesHint" />
+          <p v-else-if="hasDuplicateVariables" class="text-xs text-destructive" v-text="duplicateVariablesHint" />
+          <p v-else-if="hasVariableAtEdge" class="text-xs text-destructive" v-text="variablePositionHint" />
           <p v-else class="text-xs text-muted-foreground" v-text="bodyHint" />
         </div>
 
