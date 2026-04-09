@@ -77,5 +77,10 @@ RUN mkdir -p /app/uploads /app/audio
 # Expose port
 EXPOSE 8080
 
-# Run the binary
-CMD ["./whatomate", "server", "-config", "config.toml", "-migrate"]
+# Run the binary. ENTRYPOINT matches docker/Dockerfile.goreleaser so that
+# the image behaves identically whether built locally or from goreleaser,
+# and so that `command:` overrides in docker-compose.yml (which only pass
+# args like `["server", "-migrate", "-config", "/app/config.toml"]`)
+# work as expected.
+ENTRYPOINT ["./whatomate"]
+CMD ["server", "-config", "config.toml", "-migrate"]
