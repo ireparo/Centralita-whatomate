@@ -1,13 +1,19 @@
 services:
-  # Whatomate app
+  # iReparo app (built from local source so it ships with the iReparo
+  # branding and the missed-call WhatsApp fallback. If you prefer the
+  # upstream Whatomate image, comment out the `build:` block and
+  # change `image:` to `shridh0r/whatomate:latest`).
   app:
-    image: shridh0r/whatomate:latest
-    container_name: whatomate_app
+    image: ireparo:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: ireparo_app
     restart: unless-stopped
     ports:
       - "8080:8080"
     networks:
-      - whatomate
+      - ireparo
     depends_on:
       db:
         condition: service_healthy
@@ -23,18 +29,18 @@ services:
   # PostgreSQL database
   db:
     image: postgres:17-alpine
-    container_name: whatomate_db
+    container_name: ireparo_db
     restart: unless-stopped
     networks:
-      - whatomate
+      - ireparo
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-whatomate}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-whatomate}
-      POSTGRES_DB: ${POSTGRES_DB:-whatomate}
+      POSTGRES_USER: ${POSTGRES_USER:-ireparo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ireparo}
+      POSTGRES_DB: ${POSTGRES_DB:-ireparo}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whatomate} -d ${POSTGRES_DB:-whatomate}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ireparo} -d ${POSTGRES_DB:-ireparo}"]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -44,10 +50,10 @@ services:
   # Redis
   redis:
     image: redis:7-alpine
-    container_name: whatomate_redis
+    container_name: ireparo_redis
     restart: unless-stopped
     networks:
-      - whatomate
+      - ireparo
     ports:
       - "127.0.0.1:6379:6379"
     healthcheck:
@@ -59,7 +65,7 @@ services:
       - redis-data:/data
 
 networks:
-  whatomate:
+  ireparo:
 
 volumes:
   postgres-data:
