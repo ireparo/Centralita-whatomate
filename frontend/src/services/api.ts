@@ -644,6 +644,8 @@ export const organizationService = {
     transfer_timeout_secs?: number
     hold_music_file?: string
     ringback_file?: string
+    missed_call_whatsapp_enabled?: boolean
+    missed_call_whatsapp_template_id?: string
   }) => api.put('/org/settings', data),
   uploadOrgAudio: (file: File, type: 'hold_music' | 'ringback') => {
     const formData = new FormData()
