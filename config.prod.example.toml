@@ -1,0 +1,102 @@
+# iReparo — plantilla de configuración para PRODUCCIÓN.
+#
+# No edites este fichero directamente. El script `scripts/deploy.sh` lo
+# copia a `docker/config.toml` y sustituye los placeholders `__FOO__` por
+# los valores reales (secretos generados, dominio, IP pública, etc.).
+#
+# Si quieres hacerlo a mano, cópialo y reemplaza manualmente.
+
+[app]
+name = "iReparo"
+environment = "production"
+debug = false
+encryption_key = "__ENCRYPTION_KEY__"  # 64 hex chars — generado por deploy.sh
+
+[server]
+host = "0.0.0.0"
+port = 8080
+read_timeout = 30
+write_timeout = 30
+base_path = ""
+# CORS restringido al dominio real. Cualquier otro origen será rechazado.
+allowed_origins = "https://__DOMAIN__"
+
+[database]
+host = "db"           # nombre del servicio en docker compose, no localhost
+port = 5432
+user = "ireparo"
+password = "__DB_PASSWORD__"
+name = "ireparo"
+ssl_mode = "disable"  # dentro de la red docker no hace falta TLS
+max_open_conns = 25
+max_idle_conns = 5
+conn_max_lifetime = 300
+
+[redis]
+host = "redis"
+port = 6379
+username = ""
+password = ""
+db = 0
+tls = false
+
+[jwt]
+secret = "__JWT_SECRET__"
+access_expiry_mins = 15
+refresh_expiry_days = 1
+
+[storage]
+type = "local"
+local_path = "./uploads"
+s3_bucket = ""
+s3_region = ""
+s3_key = ""
+s3_secret = ""
+
+# Cookies seguras: sólo viajan por HTTPS. OBLIGATORIO en producción.
+[cookie]
+domain = "__DOMAIN__"
+secure = true
+
+# Rate limiting activado en producción para frenar fuerza bruta en login.
+[rate_limit]
+enabled = true
+login_max_attempts = 10
+register_max_attempts = 5
+refresh_max_attempts = 30
+sso_max_attempts = 10
+window_seconds = 60
+trust_proxy = true  # Caddy está delante, confiamos en X-Forwarded-For
+
+# TTS deshabilitado por defecto. Activa cuando quieras saludos de IVR
+# generados por texto. Requiere piper+opusenc en la imagen Docker (ya
+# incluidos).
+[tts]
+# piper_binary = "/usr/local/bin/piper"
+# piper_model = "/opt/piper/models/en_US-lessac-medium.onnx"
+
+# Llamadas de WhatsApp / WebRTC
+[calling]
+max_call_duration = 300
+audio_dir = "./audio"
+transfer_timeout_secs = 120
+recording_enabled = true
+udp_port_min = 10000
+udp_port_max = 10100
+# CRÍTICO: la IP pública del VPS. Sin esto el audio WebRTC no llega al
+# navegador del agente porque las SDP anuncian IPs internas inválidas.
+public_ip = "__PUBLIC_IP__"
+
+# STUN público de Google. Suficiente para la mayoría de casos.
+# Si tus agentes están detrás de NAT simétrico muy restrictivo, añade
+# también un servidor TURN (Coturn en otro VPS, o servicio gestionado).
+[[calling.ice_servers]]
+urls = ["stun:stun.l.google.com:19302"]
+
+# Credenciales del administrador inicial. Se usan SÓLO la primera vez
+# que arranca la BD vacía para crear el usuario admin. Cambia la
+# contraseña desde la UI nada más entrar.
+[default_admin]
+email = "__ADMIN_EMAIL__"
+password = "__ADMIN_PASSWORD__"
+full_name = "Administrador iReparo"

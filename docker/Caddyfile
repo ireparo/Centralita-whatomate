@@ -1,0 +1,46 @@
+# iReparo reverse proxy (production).
+#
+# Caddy handles:
+#   - TLS certificate via Let's Encrypt (HTTP-01 challenge on port 80)
+#   - Automatic renewal
+#   - HTTP -> HTTPS redirect (default)
+#   - WebSocket proxying (needed for the real-time chat hub)
+#
+# The DOMAIN env var is passed in by docker-compose.prod.yml, which
+# reads it from docker/.env. If you change the domain, update .env and
+# restart the caddy container (`docker compose restart caddy`). No
+# Caddyfile edit needed.
+
+{$DOMAIN} {
+	encode gzip zstd
+
+	# Everything is reverse-proxied to the iReparo app container on the
+	# internal docker network. Caddy passes through WebSockets
+	# automatically when it detects the Upgrade header.
+	reverse_proxy app:8080 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Security headers. HSTS is only safe once you are confident the
+	# domain will keep serving HTTPS (it is sticky in browsers for the
+	# max-age duration).
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		# Remove Server header leak
+		-Server
+	}
+
+	# Access log. Rotated by Caddy itself, kept in the caddy-logs volume.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 50mb
+			roll_keep 5
+		}
+		format json
+	}
+}

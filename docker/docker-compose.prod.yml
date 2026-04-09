@@ -1,0 +1,48 @@
+# iReparo production override.
+#
+# Combine with the base compose file:
+#
+#   docker compose \
+#     -f docker/docker-compose.yml \
+#     -f docker/docker-compose.prod.yml \
+#     up -d --build
+#
+# Or just use scripts/deploy.sh which does this for you.
+#
+# What this override changes vs the base compose:
+#   - The `app` service no longer publishes 8080 to the host. Instead,
+#     a new `caddy` service sits in front of it, terminating TLS with a
+#     Let's Encrypt cert for $DOMAIN and reverse-proxying to app:8080.
+#   - `caddy` publishes 80 (HTTP, used only for ACME + redirect to
+#     HTTPS) and 443 (HTTPS).
+
+services:
+  app:
+    # Remove the `8080:8080` port mapping inherited from the base file
+    # so app is only reachable from the internal docker network.
+    ports: !reset []
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ireparo_caddy
+    restart: unless-stopped
+    networks:
+      - ireparo
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    environment:
+      - DOMAIN=${DOMAIN:?DOMAIN must be set in docker/.env for production}
+    depends_on:
+      - app
+
+volumes:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
