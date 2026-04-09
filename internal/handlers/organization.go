@@ -22,6 +22,14 @@ type OrganizationSettings struct {
 	TransferTimeoutSecs int    `json:"transfer_timeout_secs"`
 	HoldMusicFile       string `json:"hold_music_file"`
 	RingbackFile        string `json:"ringback_file"`
+
+	// Missed-call → WhatsApp fallback.
+	// When MissedCallWhatsappEnabled is true and MissedCallWhatsappTemplateID
+	// points to an approved template, iReparo will automatically send that
+	// template to the contact whenever a call (incoming or outgoing, WhatsApp
+	// or PSTN once Telnyx is wired) ends without being answered.
+	MissedCallWhatsappEnabled    bool   `json:"missed_call_whatsapp_enabled"`
+	MissedCallWhatsappTemplateID string `json:"missed_call_whatsapp_template_id"`
 }
 
 // GetOrganizationSettings returns the organization settings
@@ -73,6 +81,12 @@ func (a *App) GetOrganizationSettings(r *fastglue.Request) error {
 		if v, ok := org.Settings["ringback_file"].(string); ok && v != "" {
 			settings.RingbackFile = v
 		}
+		if v, ok := org.Settings["missed_call_whatsapp_enabled"].(bool); ok {
+			settings.MissedCallWhatsappEnabled = v
+		}
+		if v, ok := org.Settings["missed_call_whatsapp_template_id"].(string); ok {
+			settings.MissedCallWhatsappTemplateID = v
+		}
 	}
 
 	return r.SendEnvelope(map[string]any{
@@ -89,15 +103,17 @@ func (a *App) UpdateOrganizationSettings(r *fastglue.Request) error {
 	}
 
 	var req struct {
-		MaskPhoneNumbers    *bool   `json:"mask_phone_numbers"`
-		Timezone            *string `json:"timezone"`
-		DateFormat          *string `json:"date_format"`
-		Name                *string `json:"name"`
-		CallingEnabled      *bool   `json:"calling_enabled"`
-		MaxCallDuration     *int    `json:"max_call_duration"`
-		TransferTimeoutSecs *int    `json:"transfer_timeout_secs"`
-		HoldMusicFile       *string `json:"hold_music_file"`
-		RingbackFile        *string `json:"ringback_file"`
+		MaskPhoneNumbers             *bool   `json:"mask_phone_numbers"`
+		Timezone                     *string `json:"timezone"`
+		DateFormat                   *string `json:"date_format"`
+		Name                         *string `json:"name"`
+		CallingEnabled               *bool   `json:"calling_enabled"`
+		MaxCallDuration              *int    `json:"max_call_duration"`
+		TransferTimeoutSecs          *int    `json:"transfer_timeout_secs"`
+		HoldMusicFile                *string `json:"hold_music_file"`
+		RingbackFile                 *string `json:"ringback_file"`
+		MissedCallWhatsappEnabled    *bool   `json:"missed_call_whatsapp_enabled"`
+		MissedCallWhatsappTemplateID *string `json:"missed_call_whatsapp_template_id"`
 	}
 
 	if err := json.Unmarshal(r.RequestCtx.PostBody(), &req); err != nil {
@@ -137,6 +153,13 @@ func (a *App) UpdateOrganizationSettings(r *fastglue.Request) error {
 	}
 	if req.RingbackFile != nil {
 		org.Settings["ringback_file"] = *req.RingbackFile
+	}
+	if req.MissedCallWhatsappEnabled != nil {
+		org.Settings["missed_call_whatsapp_enabled"] = *req.MissedCallWhatsappEnabled
+	}
+	if req.MissedCallWhatsappTemplateID != nil {
+		// Empty string clears the template selection.
+		org.Settings["missed_call_whatsapp_template_id"] = *req.MissedCallWhatsappTemplateID
 	}
 	if req.Name != nil && *req.Name != "" {
 		org.Name = *req.Name

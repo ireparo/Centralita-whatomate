@@ -584,7 +584,13 @@
     "currentFile": "Current file",
     "noFileUploaded": "Using default",
     "audioUploaded": "Audio file uploaded successfully",
-    "audioUploadFailed": "Failed to upload audio file"
+    "audioUploadFailed": "Failed to upload audio file",
+    "missedCallWhatsappTitle": "Auto WhatsApp on missed calls",
+    "missedCallWhatsappDesc": "If a customer does not answer a call or no agent is available, iReparo will automatically send them a WhatsApp template message.",
+    "missedCallWhatsappTemplate": "Template to send",
+    "missedCallWhatsappTemplatePlaceholder": "Select an approved template",
+    "missedCallWhatsappNoTemplates": "No approved templates available. Create and have Meta approve one first.",
+    "missedCallWhatsappHint": "Only approved templates are used. If the template has variables, the first one will be auto-filled with the contact name."
   },
   "users": {
     "title": "User Management",

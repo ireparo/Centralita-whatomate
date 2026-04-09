@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { PageHeader } from '@/components/shared'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { toast } from 'vue-sonner'
-import { Settings, Bell, Loader2, Globe, Phone, Upload, Play, Pause, Music } from 'lucide-vue-next'
-import { usersService, organizationService } from '@/services/api'
+import { Settings, Bell, Loader2, Globe, Phone, Upload, Play, Pause, Music, MessageSquare } from 'lucide-vue-next'
+import { usersService, organizationService, templatesService } from '@/services/api'
 
 const { t } = useI18n()
 
@@ -41,8 +41,14 @@ const callingSettings = ref({
   max_call_duration: 300,
   transfer_timeout_secs: 120,
   hold_music_file: '',
-  ringback_file: ''
+  ringback_file: '',
+  missed_call_whatsapp_enabled: false,
+  missed_call_whatsapp_template_id: ''
 })
+
+// Approved templates available for the missed-call fallback picker.
+const approvedTemplates = ref<Array<{ id: string; name: string; language: string; whatsapp_account?: string }>>([])
+const isLoadingTemplates = ref(false)
 
 const isUploadingHoldMusic = ref(false)
 const isUploadingRingback = ref(false)
@@ -74,8 +80,23 @@ onMounted(async () => {
         max_call_duration: orgData.settings?.max_call_duration || 300,
         transfer_timeout_secs: orgData.settings?.transfer_timeout_secs || 120,
         hold_music_file: orgData.settings?.hold_music_file || '',
-        ringback_file: orgData.settings?.ringback_file || ''
+        ringback_file: orgData.settings?.ringback_file || '',
+        missed_call_whatsapp_enabled: orgData.settings?.missed_call_whatsapp_enabled || false,
+        missed_call_whatsapp_template_id: orgData.settings?.missed_call_whatsapp_template_id || ''
       }
+    }
+
+    // Load approved templates in parallel for the missed-call fallback picker.
+    isLoadingTemplates.value = true
+    try {
+      const templatesResponse = await templatesService.list({ status: 'APPROVED', limit: 200 })
+      const templatesData = (templatesResponse.data as any)?.data || templatesResponse.data
+      approvedTemplates.value = templatesData?.templates || []
+    } catch (err) {
+      console.warn('Failed to load approved templates for missed-call fallback', err)
+      approvedTemplates.value = []
+    } finally {
+      isLoadingTemplates.value = false
     }
 
     // User notification settings
@@ -133,7 +154,9 @@ async function saveCallingSettings() {
     await organizationService.updateSettings({
       calling_enabled: callingSettings.value.calling_enabled,
       max_call_duration: callingSettings.value.max_call_duration,
-      transfer_timeout_secs: callingSettings.value.transfer_timeout_secs
+      transfer_timeout_secs: callingSettings.value.transfer_timeout_secs,
+      missed_call_whatsapp_enabled: callingSettings.value.missed_call_whatsapp_enabled,
+      missed_call_whatsapp_template_id: callingSettings.value.missed_call_whatsapp_template_id
     })
     toast.success(t('settings.callingSaved'))
   } catch (error) {
@@ -446,6 +469,56 @@ function togglePlayAudio(type: 'hold_music' | 'ringback') {
                       {{ $t('settings.uploadAudio') }}
                     </Button>
                     <span class="text-xs text-white/30 light:text-gray-400">.ogg, .opus, .mp3, .wav (max 5MB)</span>
+                  </div>
+                </div>
+                <Separator class="bg-white/[0.08] light:bg-gray-200" />
+                <!-- Missed-call → WhatsApp fallback -->
+                <div class="space-y-3" :class="{ 'opacity-50 pointer-events-none': !callingSettings.calling_enabled }">
+                  <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                      <p class="font-medium text-white light:text-gray-900 flex items-center gap-2">
+                        <MessageSquare class="h-4 w-4" />
+                        {{ $t('settings.missedCallWhatsappTitle') }}
+                      </p>
+                      <p class="text-sm text-white/40 light:text-gray-500 mt-1">
+                        {{ $t('settings.missedCallWhatsappDesc') }}
+                      </p>
+                    </div>
+                    <Switch
+                      :checked="callingSettings.missed_call_whatsapp_enabled"
+                      @update:checked="callingSettings.missed_call_whatsapp_enabled = $event"
+                    />
+                  </div>
+                  <div
+                    v-if="callingSettings.missed_call_whatsapp_enabled"
+                    class="space-y-2 pl-6 border-l-2 border-white/[0.08] light:border-gray-200"
+                  >
+                    <Label class="text-white/70 light:text-gray-700">
+                      {{ $t('settings.missedCallWhatsappTemplate') }}
+                    </Label>
+                    <Select
+                      v-model="callingSettings.missed_call_whatsapp_template_id"
+                      :disabled="isLoadingTemplates || approvedTemplates.length === 0"
+                    >
+                      <SelectTrigger class="bg-white/[0.04] border-white/[0.1] text-white light:bg-white light:border-gray-200 light:text-gray-900">
+                        <SelectValue :placeholder="$t('settings.missedCallWhatsappTemplatePlaceholder')" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          v-for="tpl in approvedTemplates"
+                          :key="tpl.id"
+                          :value="tpl.id"
+                        >
+                          {{ tpl.name }} ({{ tpl.language }})
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p v-if="!isLoadingTemplates && approvedTemplates.length === 0" class="text-xs text-amber-400/80">
+                      {{ $t('settings.missedCallWhatsappNoTemplates') }}
+                    </p>
+                    <p class="text-xs text-white/40 light:text-gray-500">
+                      {{ $t('settings.missedCallWhatsappHint') }}
+                    </p>
                   </div>
                 </div>
                 <div class="flex justify-end pt-4">

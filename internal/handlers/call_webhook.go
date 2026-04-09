@@ -209,6 +209,13 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 			"disconnected_by": disconnectedBy,
 		})
 
+		// Missed-call → WhatsApp fallback (async, org-toggle controlled).
+		if finalStatus == models.CallStatusMissed {
+			callLog.Status = finalStatus
+			callLog.EndedAt = &now
+			a.TriggerMissedCallWhatsApp(callLog)
+		}
+
 	case "missed", "unanswered":
 		a.DB.Model(callLog).Updates(map[string]any{
 			"status":          models.CallStatusMissed,
@@ -222,6 +229,11 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 			"status":     string(models.CallStatusMissed),
 			"ended_at":   now.Format(time.RFC3339),
 		})
+
+		// Missed-call → WhatsApp fallback (async, org-toggle controlled).
+		callLog.Status = models.CallStatusMissed
+		callLog.EndedAt = &now
+		a.TriggerMissedCallWhatsApp(callLog)
 
 	default:
 		a.Log.Warn("Unknown call event", "event", ce.Event, "call_id", ce.ID)
@@ -319,6 +331,14 @@ func (a *App) handleOrphanedOutgoingCallEvent(phoneNumberID, callID, event strin
 		})
 
 		a.Log.Info("Handled orphaned outgoing call terminate", "call_id", callID, "duration", duration)
+
+		// Missed-call → WhatsApp fallback for outgoing calls the customer
+		// never picked up (AnsweredAt is still nil on terminate).
+		if finalStatus == models.CallStatusMissed {
+			callLog.Status = finalStatus
+			callLog.EndedAt = &now
+			a.TriggerMissedCallWhatsApp(&callLog)
+		}
 	default:
 		a.Log.Debug("Ignoring orphaned outgoing call event", "call_id", callID, "event", event)
 	}
