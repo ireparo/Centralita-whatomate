@@ -1,8 +1,8 @@
 <a href="https://zerodha.tech"><img src="https://zerodha.tech/static/images/github-badge.svg" align="right" alt="Zerodha Tech Badge" /></a>
 
-# Whatomate
+# iReparo
 
-Plataforma moderna y de código abierto para WhatsApp Business. Aplicación de binario único.
+Centralita y plataforma de WhatsApp Business de iReparo. Aplicación de binario único, basada en el proyecto open-source [Whatomate](https://github.com/shridarpatil/whatomate).
 
 ![Panel](docs/public/images/dashboard-light.png#gh-light-mode-only)
 ![Panel](docs/public/images/dashboard-dark.png#gh-dark-mode-only)
