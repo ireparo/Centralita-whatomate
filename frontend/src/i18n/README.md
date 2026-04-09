@@ -1,17 +1,17 @@
-# Internationalization (i18n)
+# Internacionalización (i18n)
 
-This project uses [vue-i18n](https://vue-i18n.intlify.dev/) for internationalization and [Crowdin](https://crowdin.com/) for translation management.
+Este proyecto utiliza [vue-i18n](https://vue-i18n.intlify.dev/) para la internacionalización y [Crowdin](https://crowdin.com/) para la gestión de traducciones.
 
-## Adding New Languages
+## Añadir nuevos idiomas
 
-Languages are **auto-discovered** from the `locales/` folder. To add a new language:
+Los idiomas se **detectan automáticamente** en la carpeta `locales/`. Para añadir un idioma nuevo:
 
-1. Create a new JSON file: `locales/{language_code}.json` (e.g., `es.json` for Spanish)
-2. Copy the structure from `en.json`
-3. Translate all strings
-4. The language will automatically appear in the language switcher
+1. Crea un nuevo fichero JSON: `locales/{codigo_idioma}.json` (por ejemplo, `es.json` para español)
+2. Copia la estructura de `en.json`
+3. Traduce todas las cadenas
+4. El idioma aparecerá automáticamente en el selector de idiomas
 
-## Using Translations in Components
+## Usar traducciones en los componentes
 
 ```vue
 <script setup>
@@ -21,101 +21,101 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <!-- Simple translation -->
+  <!-- Traducción simple -->
   <p>{{ $t('common.save') }}</p>
 
-  <!-- With interpolation -->
+  <!-- Con interpolación -->
   <p>{{ $t('contacts.total', { count: 42 }) }}</p>
 
-  <!-- In script -->
+  <!-- Desde el script -->
   <button @click="alert(t('common.success'))">Click</button>
 </template>
 ```
 
-## Translation Keys Structure
+## Estructura de las claves de traducción
 
 ```
-common.*      - Shared UI elements (buttons, labels)
-auth.*        - Authentication related
-nav.*         - Navigation menu items
-chat.*        - Chat interface
-contacts.*    - Contact management
-settings.*    - Settings pages
-users.*       - User management
-analytics.*   - Analytics dashboard
-templates.*   - WhatsApp templates
-errors.*      - Error messages
-validation.*  - Form validation messages
-time.*        - Relative time strings
+common.*      - Elementos comunes de la interfaz (botones, etiquetas)
+auth.*        - Relacionados con la autenticación
+nav.*         - Elementos del menú de navegación
+chat.*        - Interfaz de chat
+contacts.*    - Gestión de contactos
+settings.*    - Páginas de configuración
+users.*       - Gestión de usuarios
+analytics.*   - Panel de analíticas
+templates.*   - Plantillas de WhatsApp
+errors.*      - Mensajes de error
+validation.*  - Mensajes de validación de formularios
+time.*        - Cadenas de tiempo relativo
 ```
 
-## For Translators (via Crowdin)
+## Para traductores (vía Crowdin)
 
-1. Go to [Crowdin Project URL]
-2. Select your language
-3. Translate strings using the web interface
-4. Translations are automatically synced to this repo
+1. Ve a [URL del proyecto en Crowdin]
+2. Selecciona tu idioma
+3. Traduce las cadenas desde la interfaz web
+4. Las traducciones se sincronizan automáticamente con este repositorio
 
-## For Developers
+## Para desarrolladores
 
-### Adding New Strings
+### Añadir cadenas nuevas
 
-1. Add the string to `locales/en.json`
-2. Use meaningful, hierarchical keys: `section.subsection.action`
-3. Use interpolation for dynamic values: `"Hello, {name}!"`
+1. Añade la cadena en `locales/en.json`
+2. Utiliza claves jerárquicas y con significado: `seccion.subseccion.accion`
+3. Usa interpolación para los valores dinámicos: `"Hola, {name}!"`
 
-### Changing Locale Programmatically
+### Cambiar el idioma por código
 
 ```typescript
 import { setLocale, getLocale, SUPPORTED_LOCALES } from '@/i18n'
 
-// Get current locale
+// Obtener el idioma actual
 const current = getLocale()
 
-// Change locale
+// Cambiar el idioma
 setLocale('es')
 
-// List available locales
+// Listar los idiomas disponibles
 console.log(SUPPORTED_LOCALES)
 ```
 
-## File Structure
+## Estructura de ficheros
 
 ```
 src/i18n/
-├── index.ts          # i18n configuration
-├── README.md         # This file
+├── index.ts          # Configuración de i18n
+├── README.md         # Este fichero
 └── locales/
-    ├── en.json       # English (source)
-    ├── es.json       # Spanish
-    ├── fr.json       # French
-    └── ...           # Other languages
+    ├── en.json       # Inglés (origen)
+    ├── es.json       # Español
+    ├── fr.json       # Francés
+    └── ...           # Otros idiomas
 ```
 
-## Crowdin Integration
+## Integración con Crowdin
 
-### Setup (one-time)
+### Configuración inicial (una sola vez)
 
-1. Create a Crowdin project
-2. Set environment variables:
+1. Crea un proyecto en Crowdin
+2. Define las variables de entorno:
    ```
-   CROWDIN_PROJECT_ID=your_project_id
-   CROWDIN_PERSONAL_TOKEN=your_token
+   CROWDIN_PROJECT_ID=tu_id_de_proyecto
+   CROWDIN_PERSONAL_TOKEN=tu_token
    ```
 
-### Sync Translations
+### Sincronizar traducciones
 
 ```bash
-# Upload source file
+# Subir el fichero origen
 npx crowdin upload sources
 
-# Download translations
+# Descargar traducciones
 npx crowdin download
 ```
 
-### GitHub Integration
+### Integración con GitHub
 
-Crowdin can be configured to:
-- Auto-sync when `en.json` changes
-- Create PRs with new translations
-- See: https://support.crowdin.com/github-integration/
+Crowdin puede configurarse para:
+- Sincronizar automáticamente cuando `en.json` cambie
+- Crear PRs con las nuevas traducciones
+- Ver: https://support.crowdin.com/github-integration/

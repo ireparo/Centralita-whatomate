@@ -1,22 +1,22 @@
-# Contributing to Whatomate
+# Contribuir a Whatomate
 
-Thanks for your interest in contributing.
+Gracias por tu interés en contribuir.
 
-## Contribution Guidelines
+## Pautas de contribución
 
-- **All PRs must align with the project’s scope, goals, and technical direction.**
-- **Large or non-trivial PRs should be discussed first via an issue.**
-- Bug fixes and documentation improvements do **not** require prior discussion.
-- Please keep PRs focused on a single concern where possible.
-  
-## Process
+- **Todas las PR deben alinearse con el alcance, los objetivos y la dirección técnica del proyecto.**
+- **Las PR grandes o no triviales deben discutirse primero a través de una issue.**
+- Las correcciones de errores y las mejoras en la documentación **no** requieren discusión previa.
+- Procura mantener cada PR centrada en un único asunto siempre que sea posible.
 
-- **Propose first (for large changes)**  
-  Open an issue describing what you want to build, why it fits Whatomate,
-  and the high-level implementation approach.
+## Proceso
 
-- **Keep PRs small**  
-  Smaller, well-scoped PRs are easier to review and test.
-  Bundling multiple features into a single PR is discouraged.
+- **Propón primero (para cambios grandes)**  
+  Abre una issue describiendo qué quieres construir, por qué encaja en Whatomate
+  y cuál es el enfoque general de implementación.
 
-Thanks for helping keep Whatomate focused and maintainable.
+- **Mantén las PR pequeñas**  
+  Las PR más pequeñas y bien delimitadas son más fáciles de revisar y probar.
+  Se desaconseja agrupar varias funcionalidades en una misma PR.
+
+Gracias por ayudar a mantener Whatomate enfocado y fácil de mantener.

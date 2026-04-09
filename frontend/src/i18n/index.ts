@@ -64,13 +64,14 @@ function getDefaultLocale(): string {
     return browserLang
   }
 
-  return 'en'
+  // Default to Spanish for this deployment
+  return 'es'
 }
 
 export const i18n = createI18n({
   legacy: false, // Use Composition API
   locale: getDefaultLocale(),
-  fallbackLocale: 'en',
+  fallbackLocale: 'es',
   messages,
 })
 

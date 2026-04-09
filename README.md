@@ -2,132 +2,132 @@
 
 # Whatomate
 
-Modern, open-source WhatsApp Business Platform. Single binary app.
+Plataforma moderna y de código abierto para WhatsApp Business. Aplicación de binario único.
 
-![Dashboard](docs/public/images/dashboard-light.png#gh-light-mode-only)
-![Dashboard](docs/public/images/dashboard-dark.png#gh-dark-mode-only)
+![Panel](docs/public/images/dashboard-light.png#gh-light-mode-only)
+![Panel](docs/public/images/dashboard-dark.png#gh-dark-mode-only)
 
-## Features
+## Funcionalidades
 
-- **Multi-tenant Architecture**
-  Support multiple organizations with isolated data and configurations.
+- **Arquitectura multitenant**
+  Permite varias organizaciones con datos y configuraciones aislados.
 
-- **Granular Roles & Permissions**
-  Customizable roles with fine-grained permissions. Create custom roles, assign specific permissions per resource (users, contacts, templates, etc.), and control access at the action level (read, create, update, delete). Super admins can manage multiple organizations.
+- **Roles y permisos granulares**
+  Roles personalizables con permisos muy detallados. Crea roles a medida, asigna permisos específicos por recurso (usuarios, contactos, plantillas, etc.) y controla el acceso por acción (leer, crear, actualizar, eliminar). Los superadministradores pueden gestionar varias organizaciones.
 
-- **WhatsApp Cloud API Integration**
-  Connect with Meta's WhatsApp Business API for messaging.
+- **Integración con la API de WhatsApp Cloud**
+  Conecta con la API de WhatsApp Business de Meta para enviar y recibir mensajes.
 
-- **Real-time Chat**
-  Live messaging with WebSocket support for instant communication.
+- **Chat en tiempo real**
+  Mensajería en directo con soporte WebSocket para una comunicación instantánea.
 
-- **Template Management**
-  Create and manage message templates approved by Meta.
+- **Gestión de plantillas**
+  Crea y gestiona plantillas de mensajes aprobadas por Meta.
 
-- **Bulk Campaigns**
-  Send campaigns to multiple contacts with retry support for failed messages.
+- **Campañas masivas**
+  Envía campañas a múltiples contactos con reintentos automáticos para los mensajes fallidos.
 
-- **Chatbot Automation**
-  Keyword-based auto-replies, conversation flows with branching logic, and AI-powered responses (OpenAI, Anthropic, Google).
+- **Automatización con chatbot**
+  Respuestas automáticas basadas en palabras clave, flujos de conversación con lógica de ramificación y respuestas impulsadas por IA (OpenAI, Anthropic, Google).
 
-- **Canned Responses**
-  Pre-defined quick replies with slash commands (`/shortcut`) and dynamic placeholders.
+- **Respuestas predefinidas**
+  Respuestas rápidas predefinidas con comandos de barra (`/atajo`) y marcadores dinámicos.
 
-- **Voice Calling & IVR**
-  Incoming and outgoing WhatsApp calls with IVR menus, DTMF routing, call transfers to agent teams, hold music, and call recording. See [calling docs](https://shridarpatil.github.io/whatomate/features/calling/).
+- **Llamadas de voz e IVR**
+  Llamadas de WhatsApp entrantes y salientes con menús IVR, enrutamiento DTMF, transferencias a equipos de agentes, música de espera y grabación de llamadas. Consulta la [documentación de llamadas](https://shridarpatil.github.io/whatomate/features/calling/).
 
-- **Analytics Dashboard**
-  Track messages, engagement, and campaign performance.
+- **Panel de analíticas**
+  Supervisa mensajes, interacciones y el rendimiento de las campañas.
 
 <details>
-<summary>View more screenshots</summary>
+<summary>Ver más capturas</summary>
 
-![Dashboard](docs/public/images/dashboard-light.png#gh-light-mode-only)
-![Dashboard](docs/public/images/dashboard-dark.png#gh-dark-mode-only)
+![Panel](docs/public/images/dashboard-light.png#gh-light-mode-only)
+![Panel](docs/public/images/dashboard-dark.png#gh-dark-mode-only)
 ![Chatbot](docs/public/images/chatbot-light.png#gh-light-mode-only)
 ![Chatbot](docs/public/images/chatbot-dark.png#gh-dark-mode-only)
-![Agent Analytics](docs/public/images/agent-analytics-light.png#gh-light-mode-only)
-![Agent Analytics](docs/public/images/agent-analytics-dark.png#gh-dark-mode-only)
-![Conversation Flow Builder](docs/public/images/conversation-flow-light.png#gh-light-mode-only)
-![Conversation Flow Builder](docs/public/images/conversation-flow-dark.png#gh-dark-mode-only)
-![Templates](docs/public/images/11-templates.png)
-![Campaigns](docs/public/images/13-campaigns.png)
+![Analíticas de agentes](docs/public/images/agent-analytics-light.png#gh-light-mode-only)
+![Analíticas de agentes](docs/public/images/agent-analytics-dark.png#gh-dark-mode-only)
+![Constructor de flujos de conversación](docs/public/images/conversation-flow-light.png#gh-light-mode-only)
+![Constructor de flujos de conversación](docs/public/images/conversation-flow-dark.png#gh-dark-mode-only)
+![Plantillas](docs/public/images/11-templates.png)
+![Campañas](docs/public/images/13-campaigns.png)
 
 </details>
 
-## Installation
+## Instalación
 
 ### Docker
 
-The latest image is available on Docker Hub at [`shridh0r/whatomate:latest`](https://hub.docker.com/r/shridh0r/whatomate)
+La imagen más reciente está disponible en Docker Hub en [`shridh0r/whatomate:latest`](https://hub.docker.com/r/shridh0r/whatomate)
 
 ```bash
-# Download compose file, sample config, and env file
+# Descarga el fichero compose, la configuración de ejemplo y el fichero env
 curl -LO https://raw.githubusercontent.com/shridarpatil/whatomate/main/docker/docker-compose.yml
 curl -LO https://raw.githubusercontent.com/shridarpatil/whatomate/main/config.example.toml
 curl -L https://raw.githubusercontent.com/shridarpatil/whatomate/main/docker/.env.example -o .env
 
-# Copy and edit config
+# Copia y edita la configuración
 cp config.example.toml config.toml
-# Edit .env to set PostgreSQL credentials and timezone
+# Edita .env para establecer las credenciales de PostgreSQL y la zona horaria
 
-# Run services
+# Arranca los servicios
 docker compose up -d
 ```
 
-Go to `http://localhost:8080` and login with `admin@admin.com` / `admin`
+Abre `http://localhost:8080` e inicia sesión con `admin@admin.com` / `admin`
 
 __________________
 
-### Binary
+### Binario
 
-Download the [latest release](https://github.com/shridarpatil/whatomate/releases) and extract the binary.
+Descarga la [última versión](https://github.com/shridarpatil/whatomate/releases) y extrae el binario.
 
 ```bash
-# Copy and edit config
+# Copia y edita la configuración
 cp config.example.toml config.toml
 
-# Run with migrations
+# Ejecuta aplicando las migraciones
 ./whatomate server -migrate
 ```
 
-Go to `http://localhost:8080` and login with `admin@admin.com` / `admin`
+Abre `http://localhost:8080` e inicia sesión con `admin@admin.com` / `admin`
 
 __________________
 
-### Build from Source
+### Compilar desde el código fuente
 
 ```bash
 git clone https://github.com/shridarpatil/whatomate.git
 cd whatomate
 
-# Production build (single binary with embedded frontend)
+# Compilación de producción (un único binario con el frontend embebido)
 make build-prod
 ./whatomate server -migrate
 ```
 
-See [configuration docs](https://shridarpatil.github.io/whatomate/getting-started/configuration/) for detailed setup options.
+Consulta la [documentación de configuración](https://shridarpatil.github.io/whatomate/getting-started/configuration/) para ver todas las opciones de instalación.
 
-## CLI Usage
-
-```bash
-./whatomate server              # API + 1 worker (default)
-./whatomate server -workers=0   # API only
-./whatomate worker -workers=4   # Workers only (for scaling)
-./whatomate version             # Show version
-```
-
-## Developers
-
-The backend is written in Go ([Fastglue](https://github.com/zerodha/fastglue)) and the frontend is Vue.js 3 with shadcn-vue.
-- If you are interested in contributing, please read [CONTRIBUTING.md](./CONTRIBUTING.md) first.
+## Uso desde la CLI
 
 ```bash
-# Development setup
-make run-migrate    # Backend (port 8080)
-cd frontend && npm run dev   # Frontend (port 3000)
+./whatomate server              # API + 1 worker (por defecto)
+./whatomate server -workers=0   # Solo API
+./whatomate worker -workers=4   # Solo workers (para escalar)
+./whatomate version             # Mostrar la versión
 ```
 
-## License
+## Para desarrolladores
 
-See [LICENSE](LICENSE) for details.
+El backend está escrito en Go ([Fastglue](https://github.com/zerodha/fastglue)) y el frontend en Vue.js 3 con shadcn-vue.
+- Si te interesa contribuir, lee primero [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+```bash
+# Entorno de desarrollo
+make run-migrate    # Backend (puerto 8080)
+cd frontend && npm run dev   # Frontend (puerto 3000)
+```
+
+## Licencia
+
+Consulta [LICENSE](LICENSE) para más detalles.
