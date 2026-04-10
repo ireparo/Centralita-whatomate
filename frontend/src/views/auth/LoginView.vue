@@ -134,6 +134,9 @@ const initiateSSO = (provider: string) => {
             <Loader2 v-if="isLoading" class="mr-2 h-4 w-4 animate-spin" />
             {{ $t('auth.signIn') }}
           </Button>
+          <p class="text-xs text-center text-white/40 light:text-gray-400 pt-1">
+            {{ $t('auth.forgotPasswordHint') }}
+          </p>
         </div>
       </form>
 

@@ -125,6 +125,7 @@
     "logout": "Logout",
     "register": "Register",
     "signIn": "Sign in",
+    "forgotPasswordHint": "Forgot your password? Contact your administrator.",
     "signOut": "Sign Out",
     "signUp": "Sign up",
     "forgotPassword": "Forgot Password?",

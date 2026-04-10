@@ -123,6 +123,7 @@
     "logout": "Cerrar sesión",
     "register": "Registrarse",
     "signIn": "Iniciar sesión",
+    "forgotPasswordHint": "¿Olvidaste tu contraseña? Contacta con tu administrador.",
     "signOut": "Cerrar sesión",
     "signUp": "Registrarse",
     "forgotPassword": "¿Olvidó su contraseña?",
