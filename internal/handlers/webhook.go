@@ -309,15 +309,28 @@ func (a *App) WebhookHandler(r *fastglue.Request) error {
 
 			phoneNumberID := change.Value.Metadata.PhoneNumberID
 
-			// Verify webhook signature on first message processing (uses cached account)
-			if !signatureVerified && len(signature) > 0 && phoneNumberID != "" {
+			// Verify webhook signature on first message processing (uses cached account).
+			// Security: if signature is missing entirely or the account has no
+			// AppSecret configured, we log a warning and continue processing
+			// (to avoid breaking onboarding), but operators should fix this by
+			// setting the App Secret in the WhatsApp account config.
+			if !signatureVerified && phoneNumberID != "" {
 				account, err := a.getWhatsAppAccountCached(phoneNumberID)
-				if err == nil && account.AppSecret != "" {
-					if !verifyWebhookSignature(body, signature, []byte(account.AppSecret)) {
-						a.Log.Warn("Invalid webhook signature", "phone_id", phoneNumberID)
-						return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Invalid signature", nil, "")
+				if err == nil {
+					switch {
+					case account.AppSecret == "":
+						a.Log.Warn("Webhook signature NOT verified: AppSecret not configured for this account. Set it in Accounts to prevent forged messages.",
+							"phone_id", phoneNumberID)
+					case len(signature) == 0:
+						a.Log.Warn("Webhook received WITHOUT X-Hub-Signature-256 header. This may indicate a spoofed request.",
+							"phone_id", phoneNumberID)
+					default:
+						if !verifyWebhookSignature(body, signature, []byte(account.AppSecret)) {
+							a.Log.Warn("Invalid webhook signature — rejecting request", "phone_id", phoneNumberID)
+							return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Invalid signature", nil, "")
+						}
+						a.Log.Debug("Webhook signature verified successfully")
 					}
-					a.Log.Debug("Webhook signature verified successfully")
 				}
 				signatureVerified = true
 			}

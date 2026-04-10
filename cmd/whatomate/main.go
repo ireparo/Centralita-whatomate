@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -129,6 +130,13 @@ func runServer(args []string) {
 	// Warn if debug mode is on in production
 	if cfg.App.Environment == "production" && cfg.App.Debug {
 		lo.Warn("Debug mode is enabled in production! This may expose sensitive information.")
+	}
+
+	// Fail-safe: CORS must be explicitly configured in production to prevent
+	// cross-origin attacks. An empty allowed_origins would silently permit
+	// any website to call the API with the user's cookies.
+	if cfg.App.Environment == "production" && strings.TrimSpace(cfg.Server.AllowedOrigins) == "" {
+		lo.Fatal("allowed_origins must be set in production (e.g. 'https://pbx.ireparo.es'). Refusing to start with open CORS.")
 	}
 
 	// Set log level based on environment
@@ -488,9 +496,19 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 		g.GET("/api/auth/sso/{provider}/callback", app.CallbackSSO)
 	}
 
-	// Webhook routes (public - for Meta)
+	// Webhook routes (public - for Meta).
+	// Rate-limited to mitigate replay attacks and webhook flooding.
+	// Meta sends at most ~250 events/sec per phone number in bursts,
+	// so 600/min per IP is generous but prevents abuse.
 	g.GET("/api/webhook", app.WebhookVerify)
-	g.POST("/api/webhook", app.WebhookHandler)
+	if cfg.RateLimit.Enabled {
+		window := time.Duration(cfg.RateLimit.WindowSeconds) * time.Second
+		g.POST("/api/webhook", withRateLimit(app.WebhookHandler, middleware.RateLimitOpts{
+			Redis: rdb, Log: lo, Max: 600, Window: window, KeyPrefix: "webhook", TrustProxy: cfg.RateLimit.TrustProxy,
+		}))
+	} else {
+		g.POST("/api/webhook", app.WebhookHandler)
+	}
 
 	// WebSocket route (auth via message-based flow after upgrade)
 	g.GET("/ws", app.WebSocketHandler)
