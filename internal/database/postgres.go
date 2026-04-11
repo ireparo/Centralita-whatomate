@@ -110,6 +110,11 @@ func GetMigrationModels() []MigrationModel {
 		{"IVRFlow", &models.IVRFlow{}},
 		{"CallTransfer", &models.CallTransfer{}},
 		{"CallPermission", &models.CallPermission{}},
+
+		// Telnyx PSTN integration (Phase 2)
+		{"TelnyxConnection", &models.TelnyxConnection{}},
+		{"TelnyxNumber", &models.TelnyxNumber{}},
+
 		{"AuditLog", &models.AuditLog{}},
 	}
 }

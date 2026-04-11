@@ -506,8 +506,12 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 		g.POST("/api/webhook", withRateLimit(app.WebhookHandler, middleware.RateLimitOpts{
 			Redis: rdb, Log: lo, Max: 600, Window: window, KeyPrefix: "webhook", TrustProxy: cfg.RateLimit.TrustProxy,
 		}))
+		g.POST("/api/webhook/telnyx", withRateLimit(app.TelnyxWebhookHandler, middleware.RateLimitOpts{
+			Redis: rdb, Log: lo, Max: 600, Window: window, KeyPrefix: "webhook_telnyx", TrustProxy: cfg.RateLimit.TrustProxy,
+		}))
 	} else {
 		g.POST("/api/webhook", app.WebhookHandler)
+		g.POST("/api/webhook/telnyx", app.TelnyxWebhookHandler)
 	}
 
 	// WebSocket route (auth via message-based flow after upgrade)
@@ -524,7 +528,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 		// Skip auth for public routes
 		if path == "/health" || path == "/ready" ||
 			path == "/api/auth/login" || path == "/api/auth/register" || path == "/api/auth/refresh" ||
-			path == "/api/auth/logout" || path == "/api/webhook" || path == "/ws" {
+			path == "/api/auth/logout" || path == "/api/webhook" || path == "/api/webhook/telnyx" || path == "/ws" {
 			return r
 		}
 		// Skip auth for SSO routes (they handle their own auth via state tokens)

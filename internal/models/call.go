@@ -38,6 +38,18 @@ const (
 	DisconnectedBySystem  DisconnectedBy = "system"  // timeout, error, etc.
 )
 
+// CallChannel identifies which transport/provider carried the call.
+// Existing calls before this column was introduced default to "whatsapp".
+type CallChannel string
+
+const (
+	// CallChannelWhatsApp — call placed/received via the WhatsApp Cloud API.
+	CallChannelWhatsApp CallChannel = "whatsapp"
+	// CallChannelTelnyxPSTN — call placed/received via Telnyx (regular fixed
+	// or mobile phone number on the public telephone network).
+	CallChannelTelnyxPSTN CallChannel = "telnyx_pstn"
+)
+
 // CallLog represents a voice call record
 type CallLog struct {
 	BaseModel
@@ -45,8 +57,11 @@ type CallLog struct {
 	WhatsAppAccount string        `gorm:"column:whatsapp_account;size:100;not null" json:"whatsapp_account"`
 	ContactID       uuid.UUID     `gorm:"type:uuid;index" json:"contact_id"`
 	WhatsAppCallID  string        `gorm:"column:whatsapp_call_id;size:255;index" json:"whatsapp_call_id"`
-	CallerPhone     string        `gorm:"size:50;not null" json:"caller_phone"`
-	Direction       CallDirection `gorm:"size:20;not null;default:'incoming'" json:"direction"`
+	// Channel is the transport that carried this call. Defaults to "whatsapp"
+	// for rows that existed before Phase 2 (Telnyx PSTN integration).
+	Channel     CallChannel   `gorm:"column:channel;size:20;not null;default:'whatsapp';index" json:"channel"`
+	CallerPhone string        `gorm:"size:50;not null" json:"caller_phone"`
+	Direction   CallDirection `gorm:"size:20;not null;default:'incoming'" json:"direction"`
 	Status          CallStatus    `gorm:"size:20;not null;default:'ringing'" json:"status"`
 	Duration        int           `gorm:"default:0" json:"duration"`
 	IVRFlowID       *uuid.UUID    `gorm:"type:uuid" json:"ivr_flow_id,omitempty"`
