@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/shridarpatil/whatomate/internal/calling"
 	"github.com/shridarpatil/whatomate/internal/contactutil"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/integrations/telnyx"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/websocket"
@@ -255,10 +256,15 @@ func (a *App) handleTelnyxCallInitiated(
 		return fmt.Errorf("create call log: %w", err)
 	}
 
+	// CRM lookup (synchronous, ≤1.5s) — enriches the agent popup with
+	// customer info if the caller is in the CRM. No-op if disabled.
+	crmLookup, externalID := a.CRMLookupForCall(ctx, contact)
+
 	// Notify the agent panel via WebSocket. The frontend already knows
 	// how to render an incoming call notification — we just publish in
-	// the same shape as WhatsApp incoming calls.
-	a.broadcastCallEvent(connection.OrganizationID, websocket.TypeCallIncoming, map[string]any{
+	// the same shape as WhatsApp incoming calls, plus optional CRM
+	// enrichment fields.
+	wsPayload := map[string]any{
 		"call_log_id":  callLog.ID.String(),
 		"call_id":      payload.CallControlID,
 		"caller_phone": callerE164,
@@ -266,6 +272,19 @@ func (a *App) handleTelnyxCallInitiated(
 		"contact_name": contact.ProfileName,
 		"channel":      string(models.CallChannelTelnyxPSTN),
 		"started_at":   now.Format(time.RFC3339),
+	}
+	CRMEnrichBroadcast(wsPayload, crmLookup)
+	a.broadcastCallEvent(connection.OrganizationID, websocket.TypeCallIncoming, wsPayload)
+
+	// Emit call.ringing to the CRM (async, retry on failure).
+	a.CRMEmitCallEvent(connection.OrganizationID, crm.EventCallRinging, &crm.CallRingingData{
+		CallID:        payload.CallControlID,
+		Direction:     "incoming",
+		CallerPhone:   callerE164,
+		CalledPhone:   dialedE164,
+		PBXContactID:  contact.ID.String(),
+		ExternalCRMID: externalID,
+		Channel:       string(models.CallChannelTelnyxPSTN),
 	})
 
 	// Load the IVR flow (if any) and start running it.
@@ -306,6 +325,20 @@ func (a *App) handleTelnyxCallAnswered(
 		"call_id":     payload.CallControlID,
 		"answered_at": now.Format(time.RFC3339),
 		"channel":     string(models.CallChannelTelnyxPSTN),
+	})
+
+	// Look up the contact again to get the cached external_crm_id for the
+	// CRM event payload.
+	var cl models.CallLog
+	var contact models.Contact
+	if err := a.DB.Where("whatsapp_call_id = ?", payload.CallControlID).First(&cl).Error; err == nil {
+		_ = a.DB.Where("id = ?", cl.ContactID).First(&contact).Error
+	}
+	a.CRMEmitCallEvent(connection.OrganizationID, crm.EventCallAnswered, &crm.CallAnsweredData{
+		CallID:        payload.CallControlID,
+		AnsweredAt:    now,
+		Channel:       string(models.CallChannelTelnyxPSTN),
+		ExternalCRMID: externalCRMIDOrNil(&contact),
 	})
 	return nil
 }
@@ -374,15 +407,54 @@ func (a *App) handleTelnyxHangup(
 	}
 
 	// Notify the agent panel.
+	disconnectedByStr := ""
+	if v, ok := updates["disconnected_by"].(models.DisconnectedBy); ok {
+		disconnectedByStr = string(v)
+	}
 	a.broadcastCallEvent(connection.OrganizationID, websocket.TypeCallEnded, map[string]any{
 		"call_id":         hangup.CallControlID,
 		"call_log_id":     callLog.ID.String(),
 		"status":          string(finalStatus),
 		"duration":        durationSec,
 		"ended_at":        now.Format(time.RFC3339),
-		"disconnected_by": string(updates["disconnected_by"].(models.DisconnectedBy)),
+		"disconnected_by": disconnectedByStr,
 		"channel":         string(models.CallChannelTelnyxPSTN),
 	})
+
+	// Look up the contact for the CRM event payload.
+	var contact models.Contact
+	_ = a.DB.Where("id = ?", callLog.ContactID).First(&contact).Error
+	extID := externalCRMIDOrNil(&contact)
+
+	// Emit call.ended (or call.missed) to the CRM.
+	if finalStatus == models.CallStatusMissed {
+		a.CRMEmitCallEvent(connection.OrganizationID, crm.EventCallMissed, &crm.CallMissedData{
+			CallID:               hangup.CallControlID,
+			CallerPhone:          callLog.CallerPhone,
+			CalledPhone:          "", // Telnyx hangup payload does not always carry it
+			PBXContactID:         callLog.ContactID.String(),
+			ExternalCRMID:        extID,
+			Reason:               "no_agent_available",
+			Channel:              string(models.CallChannelTelnyxPSTN),
+			WhatsappFallbackSent: true,
+		})
+	} else {
+		a.CRMEmitCallEvent(connection.OrganizationID, crm.EventCallEnded, &crm.CallEndedData{
+			CallID:          hangup.CallControlID,
+			Direction:       string(callLog.Direction),
+			CallerPhone:     callLog.CallerPhone,
+			CalledPhone:     "",
+			PBXContactID:    callLog.ContactID.String(),
+			ExternalCRMID:   extID,
+			Status:          string(finalStatus),
+			DurationSeconds: durationSec,
+			StartedAt:       deref(callLog.StartedAt),
+			AnsweredAt:      callLog.AnsweredAt,
+			EndedAt:         now,
+			DisconnectedBy:  disconnectedByStr,
+			Channel:         string(models.CallChannelTelnyxPSTN),
+		})
+	}
 
 	// Hook the existing missed-call WhatsApp fallback. The function is
 	// channel-agnostic — it works on any CallLog that ended in

@@ -355,6 +355,13 @@ type Contact struct {
 	// Business-Scoped User ID (from Meta BSUID rollout)
 	BSUID string `gorm:"size:150;index" json:"bsuid,omitempty"`
 
+	// ExternalCRMID is the customer ID in the external CRM (e.g. iReparo
+	// SAT in https://sat.ireparo.es). Populated lazily on the first
+	// successful lookup against the CRM and cached so subsequent calls do
+	// not have to hit the CRM. Nullable because not every contact has a
+	// matching record in the CRM (unknown callers, prospects, spam, etc.).
+	ExternalCRMID *int64 `gorm:"column:external_crm_id;index" json:"external_crm_id,omitempty"`
+
 	// Chatbot SLA tracking
 	ChatbotLastMessageAt *time.Time `json:"chatbot_last_message_at,omitempty"` // When chatbot last sent a message
 	ChatbotReminderSent  bool       `gorm:"default:false" json:"chatbot_reminder_sent"`

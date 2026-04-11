@@ -100,3 +100,16 @@ urls = ["stun:stun.l.google.com:19302"]
 email = "__ADMIN_EMAIL__"
 password = "__ADMIN_PASSWORD__"
 full_name = "Administrador iReparo"
+
+# Integración con el CRM externo (Laravel SAT en https://sat.ireparo.es).
+# Habilitada en producción. Si no quieres integrarlo todavía, pon
+# enabled = false y deja el resto en blanco.
+[integrations.crm]
+enabled                 = true
+base_url                = "https://sat.ireparo.es"
+api_key                 = "__CRM_API_KEY__"
+webhook_secret          = "__CRM_WEBHOOK_SECRET__"
+lookup_timeout_ms       = 1500
+http_timeout_ms         = 5000
+lookup_cache_ttl_secs   = 300
+negative_cache_ttl_secs = 30

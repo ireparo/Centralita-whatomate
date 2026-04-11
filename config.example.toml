@@ -116,3 +116,21 @@ udp_port_max = 10100          # WebRTC UDP port range end
 email = "admin@admin.com"
 password = "admin"
 full_name = "Admin"
+
+# External CRM integration (Phase 3).
+# When enabled, iReparo PBX will:
+#   - Look up callers by phone in the external CRM on every incoming call
+#     and enrich the agent panel with customer info + active tickets.
+#   - POST signed events to <base_url>/api/pbx/call-event for every call
+#     lifecycle event (ringing, answered, ended, missed).
+#   - Persist failed deliveries in the crm_event_queue table and retry
+#     them with exponential backoff via a background worker.
+[integrations.crm]
+enabled                 = false
+base_url                = ""    # e.g. "https://sat.ireparo.es"
+api_key                 = ""    # shared secret in X-iReparo-Api-Key header
+webhook_secret          = ""    # HMAC-SHA256 signing key for outbound POSTs
+lookup_timeout_ms       = 1500  # how long to wait for the CRM to answer a lookup before giving up
+http_timeout_ms         = 5000  # default timeout for outbound POSTs (event sends)
+lookup_cache_ttl_secs   = 300   # cache "found" responses for 5 minutes
+negative_cache_ttl_secs = 30    # cache "not found" responses for 30 seconds

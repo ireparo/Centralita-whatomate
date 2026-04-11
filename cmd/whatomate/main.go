@@ -20,6 +20,7 @@ import (
 	"github.com/shridarpatil/whatomate/internal/database"
 	"github.com/shridarpatil/whatomate/internal/frontend"
 	"github.com/shridarpatil/whatomate/internal/handlers"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/middleware"
 	"github.com/shridarpatil/whatomate/internal/queue"
 	"github.com/shridarpatil/whatomate/internal/websocket"
@@ -227,6 +228,31 @@ func runServer(args []string) {
 	app.CallManager = calling.NewManager(&cfg.Calling, s3Client, db, rdb, waClient, wsHub, assigner, lo)
 	app.S3Client = s3Client
 	lo.Info("Call manager initialized")
+
+	// Initialize CRM integration client (optional, off by default).
+	if cfg.Integrations.CRM.Enabled {
+		crmCfg := crm.Config{
+			Enabled:          cfg.Integrations.CRM.Enabled,
+			BaseURL:          cfg.Integrations.CRM.BaseURL,
+			APIKey:           cfg.Integrations.CRM.APIKey,
+			WebhookSecret:    cfg.Integrations.CRM.WebhookSecret,
+			LookupTimeout:    time.Duration(cfg.Integrations.CRM.LookupTimeoutMs) * time.Millisecond,
+			HTTPTimeout:      time.Duration(cfg.Integrations.CRM.HTTPTimeoutMs) * time.Millisecond,
+			LookupCacheTTL:   time.Duration(cfg.Integrations.CRM.LookupCacheTTLSecs) * time.Second,
+			NegativeCacheTTL: time.Duration(cfg.Integrations.CRM.NegativeCacheTTLSecs) * time.Second,
+		}
+		app.CRM = crm.NewClient(crmCfg, httpClient)
+		lo.Info("CRM integration enabled", "base_url", crmCfg.BaseURL)
+
+		// Background worker that drains the persistent crm_event_queue
+		// table for failed deliveries. Lifetime tied to the same context
+		// the rest of the workers use.
+		crmQueueCtx, crmQueueCancel := context.WithCancel(context.Background())
+		_ = crmQueueCancel // captured by shutdown handler below if needed
+		go crm.NewQueueWorker(db, app.CRM, lo).Run(crmQueueCtx)
+	} else {
+		lo.Info("CRM integration disabled (integrations.crm.enabled = false)")
+	}
 
 	// Initialize TTS if configured (requires piper binary + model)
 	if cfg.TTS.PiperBinary != "" && cfg.TTS.PiperModel != "" {

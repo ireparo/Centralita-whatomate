@@ -95,6 +95,8 @@ log "Generando secretos criptográficos..."
 ENCRYPTION_KEY="$(openssl rand -hex 32)"
 JWT_SECRET="$(openssl rand -hex 32)"
 DB_PASSWORD="$(openssl rand -hex 16)"
+CRM_API_KEY="$(openssl rand -hex 24)"
+CRM_WEBHOOK_SECRET="$(openssl rand -hex 32)"
 
 # --- write env file --------------------------------------------------
 
@@ -135,6 +137,8 @@ sed \
     -e "s|__DOMAIN__|$(escape_sed "$DOMAIN")|g" \
     -e "s|__ADMIN_EMAIL__|$(escape_sed "$ADMIN_EMAIL")|g" \
     -e "s|__ADMIN_PASSWORD__|$(escape_sed "$ADMIN_PASSWORD")|g" \
+    -e "s|__CRM_API_KEY__|$(escape_sed "$CRM_API_KEY")|g" \
+    -e "s|__CRM_WEBHOOK_SECRET__|$(escape_sed "$CRM_WEBHOOK_SECRET")|g" \
     "$CONFIG_TEMPLATE" > "$CONFIG_FILE"
 chmod 600 "$CONFIG_FILE"
 
@@ -161,6 +165,20 @@ log "Construyendo imagen y arrancando la stack (la primera vez tarda ~10 min)...
 echo
 log "Despliegue completado."
 cat <<EOF
+
+==========================================================
+  Credenciales de la integración con el CRM
+==========================================================
+
+  Pásale estos dos valores a la sesión de Claude Code que
+  trabaja en el CRM Laravel (sat.ireparo.es). Tienen que
+  guardarse en el .env del CRM como:
+
+      IREPARO_PBX_API_KEY=$CRM_API_KEY
+      IREPARO_PBX_WEBHOOK_SECRET=$CRM_WEBHOOK_SECRET
+
+  Sin esto el CRM no podrá verificar las firmas HMAC de los
+  webhooks que iReparo PBX le envíe.
 
 ==========================================================
   iReparo está arrancando en https://$DOMAIN

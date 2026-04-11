@@ -11,6 +11,7 @@ import (
 	"github.com/shridarpatil/whatomate/internal/assignment"
 	"github.com/shridarpatil/whatomate/internal/calling"
 	"github.com/shridarpatil/whatomate/internal/config"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/queue"
 	"github.com/shridarpatil/whatomate/internal/storage"
 	"github.com/shridarpatil/whatomate/internal/tts"
@@ -42,6 +43,8 @@ type App struct {
 	TTS *tts.PiperTTS
 	// S3Client for serving call recording presigned URLs (nil when not configured)
 	S3Client *storage.S3Client
+	// CRM is the client for the external Laravel CRM (nil when integrations.crm.enabled = false)
+	CRM *crm.Client
 	// wg tracks background goroutines for graceful shutdown
 	wg sync.WaitGroup
 }

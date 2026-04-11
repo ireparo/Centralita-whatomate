@@ -24,6 +24,40 @@ type Config struct {
 	Cookie        CookieConfig        `koanf:"cookie"`
 	Calling       CallingConfig       `koanf:"calling"`
 	TTS           TTSConfig           `koanf:"tts"`
+	Integrations  IntegrationsConfig  `koanf:"integrations"`
+}
+
+// IntegrationsConfig groups all third-party integrations.
+type IntegrationsConfig struct {
+	CRM CRMIntegrationConfig `koanf:"crm"`
+}
+
+// CRMIntegrationConfig configures the bidirectional link with the external
+// Laravel CRM (https://sat.ireparo.es).
+//
+// When enabled is true, iReparo PBX will:
+//
+//   - Look up the caller in the CRM on every incoming call (synchronous,
+//     bounded by lookup_timeout_ms) and enrich the agent panel with
+//     customer info and active tickets.
+//   - Emit signed POSTs to <base_url>/api/pbx/call-event for every call
+//     lifecycle event (ringing, answered, ended, missed) so the CRM can
+//     mirror call history into its own database.
+//   - Persist failed deliveries in the crm_event_queue table and retry
+//     them with exponential backoff via a background worker.
+//
+// All credentials are read from this config block (file-based for now;
+// will move to per-org DB rows in a future iteration if you ever want
+// multiple CRMs).
+type CRMIntegrationConfig struct {
+	Enabled              bool   `koanf:"enabled"`
+	BaseURL              string `koanf:"base_url"`
+	APIKey               string `koanf:"api_key"`
+	WebhookSecret        string `koanf:"webhook_secret"`
+	LookupTimeoutMs      int    `koanf:"lookup_timeout_ms"`
+	HTTPTimeoutMs        int    `koanf:"http_timeout_ms"`
+	LookupCacheTTLSecs   int    `koanf:"lookup_cache_ttl_secs"`
+	NegativeCacheTTLSecs int    `koanf:"negative_cache_ttl_secs"`
 }
 
 type TTSConfig struct {

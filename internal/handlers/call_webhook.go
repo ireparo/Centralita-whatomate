@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/shridarpatil/whatomate/internal/contactutil"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/websocket"
 )
@@ -100,8 +102,13 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 
 	switch ce.Event {
 	case "ringing":
+		// CRM lookup (synchronous, ≤1.5s) — enriches the agent panel
+		// with customer info if the caller is in the CRM. No-op if
+		// CRM integration is disabled.
+		crmLookup, externalID := a.CRMLookupForCall(context.Background(), contact)
+
 		// Broadcast incoming call via WebSocket (no SDP yet, WebRTC starts on "connect")
-		a.broadcastCallEvent(account.OrganizationID, websocket.TypeCallIncoming, map[string]any{
+		wsPayload := map[string]any{
 			"call_log_id":  callLog.ID.String(),
 			"call_id":      ce.ID,
 			"caller_phone": ce.From,
@@ -109,6 +116,20 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 			"contact_name": contact.ProfileName,
 			"ivr_flow_id":  callLog.IVRFlowID,
 			"started_at":   now.Format(time.RFC3339),
+			"channel":      string(models.CallChannelWhatsApp),
+		}
+		CRMEnrichBroadcast(wsPayload, crmLookup)
+		a.broadcastCallEvent(account.OrganizationID, websocket.TypeCallIncoming, wsPayload)
+
+		// Emit call.ringing event to the CRM (async, non-blocking, with retry).
+		a.CRMEmitCallEvent(account.OrganizationID, crm.EventCallRinging, &crm.CallRingingData{
+			CallID:        ce.ID,
+			Direction:     "incoming",
+			CallerPhone:   crm.NormalizePhone(ce.From),
+			CalledPhone:   account.PhoneID,
+			PBXContactID:  contact.ID.String(),
+			ExternalCRMID: externalID,
+			Channel:       string(models.CallChannelWhatsApp),
 		})
 
 	case "connect":
@@ -139,6 +160,14 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 			"call_id":     ce.ID,
 			"contact_id":  contact.ID.String(),
 			"answered_at": now.Format(time.RFC3339),
+		})
+
+		// Emit call.answered to the CRM (async).
+		a.CRMEmitCallEvent(account.OrganizationID, crm.EventCallAnswered, &crm.CallAnsweredData{
+			CallID:        ce.ID,
+			AnsweredAt:    now.UTC(),
+			Channel:       string(models.CallChannelWhatsApp),
+			ExternalCRMID: externalCRMIDOrNil(contact),
 		})
 
 	case "in_call":
@@ -209,6 +238,37 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 			"disconnected_by": disconnectedBy,
 		})
 
+		// Emit call.ended (or call.missed) to the CRM (async).
+		extID := externalCRMIDOrNil(contact)
+		if finalStatus == models.CallStatusMissed {
+			a.CRMEmitCallEvent(account.OrganizationID, crm.EventCallMissed, &crm.CallMissedData{
+				CallID:               ce.ID,
+				CallerPhone:          crm.NormalizePhone(callLog.CallerPhone),
+				CalledPhone:          account.PhoneID,
+				PBXContactID:         contact.ID.String(),
+				ExternalCRMID:        extID,
+				Reason:               "no_agent_available",
+				Channel:              string(models.CallChannelWhatsApp),
+				WhatsappFallbackSent: true,
+			})
+		} else {
+			a.CRMEmitCallEvent(account.OrganizationID, crm.EventCallEnded, &crm.CallEndedData{
+				CallID:          ce.ID,
+				Direction:       string(callLog.Direction),
+				CallerPhone:     crm.NormalizePhone(callLog.CallerPhone),
+				CalledPhone:     account.PhoneID,
+				PBXContactID:    contact.ID.String(),
+				ExternalCRMID:   extID,
+				Status:          string(finalStatus),
+				DurationSeconds: duration,
+				StartedAt:       deref(callLog.StartedAt),
+				AnsweredAt:      callLog.AnsweredAt,
+				EndedAt:         now.UTC(),
+				DisconnectedBy:  disconnectedBy,
+				Channel:         string(models.CallChannelWhatsApp),
+			})
+		}
+
 		// Missed-call → WhatsApp fallback (async, org-toggle controlled).
 		if finalStatus == models.CallStatusMissed {
 			callLog.Status = finalStatus
@@ -228,6 +288,18 @@ func (a *App) processCallWebhook(phoneNumberID string, call any) {
 			"contact_id": contact.ID.String(),
 			"status":     string(models.CallStatusMissed),
 			"ended_at":   now.Format(time.RFC3339),
+		})
+
+		// Emit call.missed to the CRM (async).
+		a.CRMEmitCallEvent(account.OrganizationID, crm.EventCallMissed, &crm.CallMissedData{
+			CallID:               ce.ID,
+			CallerPhone:          crm.NormalizePhone(callLog.CallerPhone),
+			CalledPhone:          account.PhoneID,
+			PBXContactID:         contact.ID.String(),
+			ExternalCRMID:        externalCRMIDOrNil(contact),
+			Reason:               "caller_hung_up",
+			Channel:              string(models.CallChannelWhatsApp),
+			WhatsappFallbackSent: true,
 		})
 
 		// Missed-call → WhatsApp fallback (async, org-toggle controlled).

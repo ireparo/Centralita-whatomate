@@ -115,6 +115,9 @@ func GetMigrationModels() []MigrationModel {
 		{"TelnyxConnection", &models.TelnyxConnection{}},
 		{"TelnyxNumber", &models.TelnyxNumber{}},
 
+		// CRM integration (Phase 3) — persistent retry queue for events
+		{"CRMEventQueue", &models.CRMEventQueue{}},
+
 		{"AuditLog", &models.AuditLog{}},
 	}
 }
