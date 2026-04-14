@@ -137,17 +137,16 @@ func (a *App) dispatchTelnyxEvent(
 		return calling.AdvanceTelnyxIVR(ctx, deps, payload.CallControlID, payload.ClientState, "default")
 
 	case telnyx.EventGatherEnded:
-		// Decode the digits from the payload to know which edge to take.
+		// Decode the digits from the payload. The continuation routes
+		// differently depending on whether the current node is a `menu`
+		// (digit: edge) or a `gather` (default edge + variable storage),
+		// so we hand off to the specialized AdvanceTelnyxIVRAfterGather.
 		var gatherPayload struct {
 			Digits string `json:"digits"`
 			Status string `json:"status"`
 		}
 		_ = json.Unmarshal(env.Data.Payload, &gatherPayload)
-		outcome := "timeout"
-		if gatherPayload.Digits != "" {
-			outcome = "digit:" + gatherPayload.Digits
-		}
-		return calling.AdvanceTelnyxIVR(ctx, deps, payload.CallControlID, payload.ClientState, outcome)
+		return calling.AdvanceTelnyxIVRAfterGather(ctx, deps, payload.CallControlID, payload.ClientState, gatherPayload.Digits)
 
 	// ---- Transfer / bridge --------------------------------------------
 
