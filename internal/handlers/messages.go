@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/templateutil"
 	"github.com/shridarpatil/whatomate/internal/utils"
@@ -415,6 +416,14 @@ func (a *App) finalizeMessageSend(msg *models.Message, req OutgoingMessageReques
 		"whats_app_message_id": wamid,
 	})
 	a.Log.Info("Message sent", "message_id", msg.ID, "wa_message_id", wamid, "type", msg.MessageType)
+
+	// Phase 3.2: emit message.outbound to the external CRM so the send
+	// shows up in the customer timeline there too. We set the wamid on the
+	// local copy first so the payload carries Meta's stable message id.
+	msg.WhatsAppMessageID = wamid
+	if data := a.buildOutboundMessageData(msg, req.Contact, req.Account); data != nil {
+		a.CRMEmitMessageEvent(req.Account.OrganizationID, crm.EventMessageOutbound, data)
+	}
 
 	// Dispatch webhook for successful send
 	if opts.DispatchWebhook {

@@ -137,3 +137,135 @@ func deref(t *time.Time) time.Time {
 	}
 	return *t
 }
+
+// CRMEmitMessageEvent builds a CRM event envelope for message.inbound /
+// message.outbound and sends it asynchronously with the same
+// fire-and-forget + persistent-retry semantics as CRMEmitCallEvent.
+//
+// The helper is a no-op if the CRM integration is disabled or if data is
+// nil, so callers in the message pipeline can call it unconditionally.
+func (a *App) CRMEmitMessageEvent(orgID uuid.UUID, eventType string, data any) {
+	if a.CRM == nil || !a.CRM.Enabled() || data == nil {
+		return
+	}
+	env, err := a.CRM.BuildEvent(eventType, data)
+	if err != nil {
+		a.Log.Debug("CRM build message event failed", "event_type", eventType, "error", err)
+		return
+	}
+
+	a.wg.Add(1)
+	go func() {
+		defer a.wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := a.CRM.Send(ctx, env); err == nil {
+			return
+		} else {
+			a.Log.Debug("CRM message event Send failed, enqueuing for retry",
+				"event_type", eventType, "error", err)
+		}
+		if err := crm.EnqueueEvent(a.DB, orgID, env); err != nil {
+			a.Log.Warn("CRM message event enqueue failed (event lost)",
+				"event_type", eventType, "error", err)
+		}
+	}()
+}
+
+// buildInboundMessageData is a small helper that produces the CRM payload
+// for an incoming WhatsApp message. Keeping it in one place makes it easy
+// to keep fields in sync with the Go struct in
+// internal/integrations/crm/events.go.
+func buildInboundMessageData(
+	msg *models.Message,
+	contact *models.Contact,
+	account *models.WhatsAppAccount,
+) *crm.MessageInboundData {
+	if msg == nil || contact == nil || account == nil {
+		return nil
+	}
+	return &crm.MessageInboundData{
+		MessageID:       msg.WhatsAppMessageID,
+		FromPhone:       crm.NormalizePhone(contact.PhoneNumber),
+		PBXContactID:    contact.ID.String(),
+		ExternalCRMID:   externalCRMIDOrNil(contact),
+		Type:            string(msg.MessageType),
+		Content:         msg.Content,
+		MediaURL:        msg.MediaURL,
+		WhatsAppAccount: account.Name,
+	}
+}
+
+// buildOutboundMessageData is the counterpart of buildInboundMessageData
+// for outgoing messages. It infers the sender type from the combination of
+// SentByUserID (agent if set) + message type (template / interactive / etc.)
+// so the CRM can branch cleanly on who initiated the send.
+func (a *App) buildOutboundMessageData(
+	msg *models.Message,
+	contact *models.Contact,
+	account *models.WhatsAppAccount,
+) *crm.MessageOutboundData {
+	if msg == nil || contact == nil || account == nil {
+		return nil
+	}
+	return &crm.MessageOutboundData{
+		MessageID:       msg.WhatsAppMessageID,
+		ToPhone:         crm.NormalizePhone(contact.PhoneNumber),
+		PBXContactID:    contact.ID.String(),
+		ExternalCRMID:   externalCRMIDOrNil(contact),
+		Type:            string(msg.MessageType),
+		Content:         msg.Content,
+		SentBy:          a.resolveMessageSender(msg),
+		WhatsAppAccount: account.Name,
+	}
+}
+
+// resolveMessageSender classifies who triggered an outbound message. The
+// iReparo message model has no explicit sender_type, so we infer from
+// SentByUserID (agent if non-nil) and MessageType as a fallback signal.
+//
+// Categories:
+//
+//   - agent                — SentByUserID is set (UI or API-on-behalf-of-agent)
+//   - template             — MessageType=template with no agent
+//   - missed_call_fallback — MessageType=template and the template is the
+//                            configured missed-call-fallback template. The
+//                            template name match is a best-effort hint
+//                            (see WhatsAppAccount.MissedCallWhatsAppTemplate).
+//   - chatbot              — MessageType interactive/flow/button with no agent
+//   - campaign             — default fallback when none of the above fire
+//
+// The classification is advisory; the CRM can always look at the message
+// type + agent fields in the payload if it needs more detail.
+func (a *App) resolveMessageSender(msg *models.Message) *crm.MessageSenderInfo {
+	if msg == nil {
+		return nil
+	}
+	info := &crm.MessageSenderInfo{}
+
+	if msg.SentByUserID != nil {
+		info.Type = "agent"
+		info.AgentID = msg.SentByUserID.String()
+		// Best-effort: fetch the user's full name. Errors are ignored so we
+		// still send the event — the agent name is informational.
+		var user models.User
+		if err := a.DB.
+			Select("id, full_name").
+			Where("id = ?", *msg.SentByUserID).
+			First(&user).Error; err == nil {
+			info.AgentName = user.FullName
+		}
+		return info
+	}
+
+	switch msg.MessageType {
+	case models.MessageTypeTemplate:
+		info.Type = "template"
+	case models.MessageTypeInteractive, models.MessageTypeFlow:
+		info.Type = "chatbot"
+	default:
+		info.Type = "campaign"
+	}
+	return info
+}

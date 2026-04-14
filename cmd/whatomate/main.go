@@ -750,6 +750,11 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/audit-logs", app.ListAuditLogs)
 	g.GET("/api/audit-logs/{id}", app.GetAuditLog)
 
+	// CRM integration — dead-letter queue admin (Phase 3.2)
+	g.GET("/api/admin/crm-queue", app.ListCRMEventQueue)
+	g.POST("/api/admin/crm-queue/{id}/replay", app.ReplayCRMEventQueue)
+	g.DELETE("/api/admin/crm-queue/{id}", app.DeleteCRMEventQueue)
+
 	// Canned Responses
 	g.GET("/api/canned-responses", app.ListCannedResponses)
 	g.POST("/api/canned-responses", app.CreateCannedResponse)

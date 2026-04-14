@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shridarpatil/whatomate/internal/contactutil"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/pkg/whatsapp"
 )
@@ -2246,6 +2247,13 @@ func (a *App) saveIncomingMessage(account *models.WhatsAppAccount, contact *mode
 	if err := a.DB.Create(&message).Error; err != nil {
 		a.Log.Error("Failed to save incoming message", "error", err)
 		return
+	}
+
+	// Phase 3.2: emit message.inbound to the external CRM so customer
+	// conversations are mirrored there. Fire-and-forget with persistent
+	// retry on failure — never blocks the webhook pipeline.
+	if data := buildInboundMessageData(&message, contact, account); data != nil {
+		a.CRMEmitMessageEvent(account.OrganizationID, crm.EventMessageInbound, data)
 	}
 
 	// Update contact's last message info
