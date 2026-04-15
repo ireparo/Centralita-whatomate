@@ -577,6 +577,209 @@ func (c *Client) MarkRead(ctx context.Context, messageIDs []string, senderPhone 
 	return c.wm.MarkRead(messageIDs, time.Now(), senderJID, senderJID)
 }
 
+// --- Group management (Phase W.5) ---------------------------------------
+//
+// iReparo exposes a small CRUD-style admin surface for WhatsApp groups:
+// list participants, add, remove, promote, demote, rename, leave, and
+// create. All of these map to single whatsmeow calls — we wrap them so
+// the handlers layer doesn't need to import go.mau.fi/whatsmeow/types
+// or reason about the subtle JID conversions.
+
+// GroupParticipant is the trimmed view of one participant in a group
+// info response. The Phone form matches Contact.PhoneNumber (E.164
+// without the leading "+").
+type GroupParticipant struct {
+	Phone        string `json:"phone"`
+	DisplayName  string `json:"display_name,omitempty"`
+	IsAdmin      bool   `json:"is_admin"`
+	IsSuperAdmin bool   `json:"is_super_admin"`
+}
+
+// GroupInfoSummary is what GetGroupInfo returns. Subject + description
+// + created-at + owner + participants.
+type GroupInfoSummary struct {
+	JID           string              `json:"jid"`
+	Subject       string              `json:"subject"`
+	Description   string              `json:"description,omitempty"`
+	OwnerPhone    string              `json:"owner_phone,omitempty"`
+	CreatedAt     time.Time           `json:"created_at,omitempty"`
+	Participants  []GroupParticipant  `json:"participants"`
+}
+
+// GetGroupInfo fetches the current state of a WhatsApp group from the
+// server. Used by the admin UI to render the participant list.
+func (c *Client) GetGroupInfo(ctx context.Context, groupJID string) (*GroupInfoSummary, error) {
+	if c.State() != StateLoggedIn {
+		return nil, fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	jid, err := types.ParseJID(groupJID)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow: invalid group JID: %w", err)
+	}
+	info, err := c.wm.GetGroupInfo(jid)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow get group info: %w", err)
+	}
+	out := &GroupInfoSummary{
+		JID:     info.JID.String(),
+		Subject: info.Name,
+	}
+	if info.GroupTopic.Topic != "" {
+		out.Description = info.GroupTopic.Topic
+	}
+	if !info.OwnerJID.IsEmpty() {
+		out.OwnerPhone = jidToPhone(info.OwnerJID)
+	}
+	if !info.GroupCreated.IsZero() {
+		out.CreatedAt = info.GroupCreated
+	}
+	out.Participants = make([]GroupParticipant, 0, len(info.Participants))
+	for _, p := range info.Participants {
+		out.Participants = append(out.Participants, GroupParticipant{
+			Phone:        jidToPhone(p.JID),
+			DisplayName:  p.DisplayName,
+			IsAdmin:      p.IsAdmin,
+			IsSuperAdmin: p.IsSuperAdmin,
+		})
+	}
+	return out, nil
+}
+
+// ParticipantChange enumerates the four actions the add/remove/promote/
+// demote endpoint can request. Kept as a typed alias so the handlers
+// layer gets compile-time safety on which action they pass.
+type ParticipantChange string
+
+const (
+	ParticipantChangeAdd     ParticipantChange = "add"
+	ParticipantChangeRemove  ParticipantChange = "remove"
+	ParticipantChangePromote ParticipantChange = "promote"
+	ParticipantChangeDemote  ParticipantChange = "demote"
+)
+
+// UpdateGroupParticipants applies one of the four participant-level
+// actions to a batch of phones. The caller passes E.164-no-plus phones
+// (matching Contact.PhoneNumber); we translate to JIDs internally.
+//
+// Returns the list of phones the server actually accepted — some may
+// fail because the target user does not exist on WhatsApp, has blocked
+// the group, has the account on pause, etc.
+func (c *Client) UpdateGroupParticipants(ctx context.Context, groupJID string, phones []string, action ParticipantChange) ([]string, error) {
+	if c.State() != StateLoggedIn {
+		return nil, fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	jid, err := types.ParseJID(groupJID)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow: invalid group JID: %w", err)
+	}
+	if len(phones) == 0 {
+		return nil, nil
+	}
+	participants := make([]types.JID, 0, len(phones))
+	for _, p := range phones {
+		if p == "" {
+			continue
+		}
+		participants = append(participants, types.NewJID(p, types.DefaultUserServer))
+	}
+	var change whatsmeow.ParticipantChange
+	switch action {
+	case ParticipantChangeAdd:
+		change = whatsmeow.ParticipantChangeAdd
+	case ParticipantChangeRemove:
+		change = whatsmeow.ParticipantChangeRemove
+	case ParticipantChangePromote:
+		change = whatsmeow.ParticipantChangePromote
+	case ParticipantChangeDemote:
+		change = whatsmeow.ParticipantChangeDemote
+	default:
+		return nil, fmt.Errorf("whatsmeow: invalid participant change %q", action)
+	}
+	result, err := c.wm.UpdateGroupParticipants(jid, participants, change)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow update participants: %w", err)
+	}
+	accepted := make([]string, 0, len(result))
+	for _, p := range result {
+		accepted = append(accepted, jidToPhone(p.JID))
+	}
+	return accepted, nil
+}
+
+// SetGroupSubject renames a WhatsApp group. All participants see the
+// rename as a system message "<you> changed the subject to <new>".
+func (c *Client) SetGroupSubject(ctx context.Context, groupJID, newSubject string) error {
+	if c.State() != StateLoggedIn {
+		return fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	jid, err := types.ParseJID(groupJID)
+	if err != nil {
+		return fmt.Errorf("whatsmeow: invalid group JID: %w", err)
+	}
+	return c.wm.SetGroupName(jid, newSubject)
+}
+
+// LeaveGroup removes the paired account from the group. Participants
+// see "<you> left" as a system message. The Contact row on iReparo
+// side is not deleted (history preserved); an admin can flag it
+// inactive if desired.
+func (c *Client) LeaveGroup(ctx context.Context, groupJID string) error {
+	if c.State() != StateLoggedIn {
+		return fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	jid, err := types.ParseJID(groupJID)
+	if err != nil {
+		return fmt.Errorf("whatsmeow: invalid group JID: %w", err)
+	}
+	return c.wm.LeaveGroup(jid)
+}
+
+// CreateGroup creates a fresh WhatsApp group with the given subject and
+// initial participants. Returns the GroupInfoSummary of the new group
+// so the handler can upsert a Contact row immediately.
+func (c *Client) CreateGroup(ctx context.Context, subject string, participantPhones []string) (*GroupInfoSummary, error) {
+	if c.State() != StateLoggedIn {
+		return nil, fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	if subject == "" {
+		return nil, errors.New("whatsmeow: group subject is required")
+	}
+	if len(participantPhones) < 1 {
+		return nil, errors.New("whatsmeow: at least one participant is required")
+	}
+	participants := make([]types.JID, 0, len(participantPhones))
+	for _, p := range participantPhones {
+		if p == "" {
+			continue
+		}
+		participants = append(participants, types.NewJID(p, types.DefaultUserServer))
+	}
+	req := whatsmeow.ReqCreateGroup{
+		Name:         subject,
+		Participants: participants,
+	}
+	info, err := c.wm.CreateGroup(req)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow create group: %w", err)
+	}
+	out := &GroupInfoSummary{
+		JID:     info.JID.String(),
+		Subject: info.Name,
+	}
+	if !info.GroupCreated.IsZero() {
+		out.CreatedAt = info.GroupCreated
+	}
+	for _, p := range info.Participants {
+		out.Participants = append(out.Participants, GroupParticipant{
+			Phone:        jidToPhone(p.JID),
+			DisplayName:  p.DisplayName,
+			IsAdmin:      p.IsAdmin,
+			IsSuperAdmin: p.IsSuperAdmin,
+		})
+	}
+	return out, nil
+}
+
 // protoUint64 / protoBool mirror `proto` for uint64 / bool fields on the
 // whatsmeow proto. Used by the media send methods.
 func protoUint64(v uint64) *uint64 { return &v }
