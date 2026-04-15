@@ -270,6 +270,7 @@
     "customActions": "Custom Actions",
     "sso": "SSO",
     "auditLogs": "Audit Logs",
+    "crmQueue": "CRM Queue",
     "calling": "Calling",
     "callLogs": "Call Logs",
     "ivrFlows": "IVR Flows",
@@ -1136,6 +1137,43 @@
     "editResponse": "Edit response",
     "deleteResponse": "Delete response",
     "errorLoadingResponses": "Failed to load canned responses. Please try again."
+  },
+  "crmQueue": {
+    "title": "CRM Event Queue",
+    "subtitle": "Manage CRM events that failed to deliver to the external CRM",
+    "tableTitle": "Queued events",
+    "tableDesc": "Call and message events pending delivery to the CRM, or that exceeded the maximum retry attempts.",
+    "empty": "No events",
+    "emptyDesc": "There are no events matching the selected filter.",
+    "all": "All",
+    "inspect": "View payload",
+    "inspectTitle": "Event payload",
+    "replay": "Replay",
+    "replayConfirmTitle": "Replay event delivery",
+    "replayConfirmDesc": "The attempt counter will be reset to 0 and delivery will be attempted immediately. If it fails, the worker will retry with exponential backoff.",
+    "replayDelivered": "Event delivered successfully to the CRM.",
+    "replayPending": "Event marked as pending. The worker will retry shortly.",
+    "replayError": "Could not replay the event.",
+    "deleteTitle": "Delete event from queue",
+    "deleteSuccess": "Event permanently deleted.",
+    "deleteError": "Could not delete the event.",
+    "fetchError": "Could not load the CRM event queue.",
+    "fetchErrorTitle": "Load error",
+    "fetchErrorDescription": "Unable to fetch the CRM event list. Check your connection and retry.",
+    "lastErrorLabel": "Last error",
+    "columns": {
+      "eventType": "Event",
+      "status": "Status",
+      "attempts": "Attempts",
+      "lastError": "Last error",
+      "nextAttempt": "Next attempt",
+      "created": "Created"
+    },
+    "statuses": {
+      "pending": "Pending",
+      "delivered": "Delivered",
+      "deadLetter": "Dead letter"
+    }
   },
   "auditLogs": {
     "title": "Audit Logs",

@@ -268,6 +268,7 @@
     "customActions": "Acciones personalizadas",
     "sso": "SSO",
     "auditLogs": "Registros de auditoría",
+    "crmQueue": "Cola CRM",
     "calling": "Llamadas",
     "callLogs": "Registro de llamadas",
     "ivrFlows": "Flujos IVR",
@@ -1134,6 +1135,43 @@
     "editResponse": "Editar respuesta",
     "deleteResponse": "Eliminar respuesta",
     "errorLoadingResponses": "No se pudieron cargar las respuestas predefinidas. Inténtalo de nuevo."
+  },
+  "crmQueue": {
+    "title": "Cola de eventos CRM",
+    "subtitle": "Gestiona los eventos enviados al CRM externo que fallaron en la entrega",
+    "tableTitle": "Eventos en cola",
+    "tableDesc": "Eventos de llamadas y mensajes pendientes de entregar al CRM, o que han excedido el máximo de reintentos.",
+    "empty": "No hay eventos",
+    "emptyDesc": "No hay eventos que coincidan con el filtro seleccionado.",
+    "all": "Todos",
+    "inspect": "Ver payload",
+    "inspectTitle": "Payload del evento",
+    "replay": "Reintentar",
+    "replayConfirmTitle": "Reintentar entrega del evento",
+    "replayConfirmDesc": "Se reseteará el contador de intentos a 0 y se intentará la entrega inmediatamente. Si falla, el worker lo reintentará según el backoff exponencial.",
+    "replayDelivered": "Evento entregado correctamente al CRM.",
+    "replayPending": "Evento marcado como pendiente. El worker lo reintentará en breve.",
+    "replayError": "No se pudo reintentar el evento.",
+    "deleteTitle": "Eliminar evento de la cola",
+    "deleteSuccess": "Evento eliminado permanentemente.",
+    "deleteError": "No se pudo eliminar el evento.",
+    "fetchError": "No se pudo cargar la cola de eventos CRM.",
+    "fetchErrorTitle": "Error al cargar",
+    "fetchErrorDescription": "No se pudo obtener la lista de eventos CRM. Verifica la conexión e inténtalo de nuevo.",
+    "lastErrorLabel": "Último error",
+    "columns": {
+      "eventType": "Evento",
+      "status": "Estado",
+      "attempts": "Intentos",
+      "lastError": "Último error",
+      "nextAttempt": "Próximo intento",
+      "created": "Creado"
+    },
+    "statuses": {
+      "pending": "Pendientes",
+      "delivered": "Entregados",
+      "deadLetter": "Fallidos"
+    }
   },
   "auditLogs": {
     "title": "Registros de auditoría",

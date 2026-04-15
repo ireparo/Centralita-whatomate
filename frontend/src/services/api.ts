@@ -1131,4 +1131,40 @@ export const ivrFlowsService = {
   getAudioUrl: (filename: string) => `${api.defaults.baseURL}/ivr-flows/audio/${encodeURIComponent(filename)}`
 }
 
+// CRM dead-letter queue (Phase 3.2)
+//
+// The PBX emits signed CRM events asynchronously; on delivery failure they
+// are persisted to crm_event_queue with an exponential-backoff retry loop.
+// Events that exceed MaxAttempts land in the dead_letter status and require
+// operator intervention — this service powers the admin UI for that.
+
+export interface CrmQueueRow {
+  id: string
+  event_type: string
+  endpoint: string
+  status: 'pending' | 'delivered' | 'dead_letter'
+  attempt_count: number
+  next_attempt_at?: string
+  last_error?: string
+  delivered_at?: string
+  created_at: string
+  payload_preview: string
+}
+
+export interface CrmQueueListResponse {
+  rows: CrmQueueRow[]
+  total: number
+  pending: number
+  dead_letter: number
+  delivered: number
+}
+
+export const crmQueueService = {
+  list: (params?: { status?: string; limit?: number; offset?: number }) =>
+    api.get<CrmQueueListResponse>('/admin/crm-queue', { params }),
+  replay: (id: string) =>
+    api.post<{ status: string }>(`/admin/crm-queue/${id}/replay`),
+  delete: (id: string) => api.delete(`/admin/crm-queue/${id}`),
+}
+
 export default api
