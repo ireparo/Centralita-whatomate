@@ -767,6 +767,10 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/telnyx/numbers/{id}", app.UpdateTelnyxNumber)
 	g.DELETE("/api/telnyx/numbers/{id}", app.DeleteTelnyxNumber)
 
+	// Public signed IVR audio endpoint — used by Telnyx to fetch IVR prompts
+	// during a call. Auth is via HMAC in the URL; no JWT required.
+	g.GET("/api/public/ivr-audio/{filename}", app.ServeSignedIVRAudio)
+
 	// Canned Responses
 	g.GET("/api/canned-responses", app.ListCannedResponses)
 	g.POST("/api/canned-responses", app.CreateCannedResponse)

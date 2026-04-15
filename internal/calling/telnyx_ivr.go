@@ -101,6 +101,44 @@ func DecodeTelnyxIVRState(encoded string) (*TelnyxIVRState, error) {
 type TelnyxIVRDeps struct {
 	DB     *gorm.DB
 	Telnyx *telnyx.Client
+
+	// AudioURLResolver converts a locally-stored audio filename (the one the
+	// WhatsApp WebRTC IVR stores in node.Config["audio_file"]) into an
+	// HTTP(S) URL that Telnyx can fetch. Typically returns a short-lived
+	// signed URL to the public IVR audio endpoint.
+	//
+	// Optional — if nil, nodes that rely on audio_file (and have no explicit
+	// audio_url) are treated as silent. The webhook handler wires this to
+	// App.BuildSignedIVRAudioURL.
+	AudioURLResolver func(filename string) string
+}
+
+// resolveAudio returns the HTTP(S) URL Telnyx should fetch to play a prompt
+// for the given IVR node. It prefers an explicit "audio_url" (set by admins
+// who host their own prompts externally, e.g. on a CDN) and falls back to
+// building a signed URL from "audio_file" (the local TTS-generated file).
+//
+// Returns "" when neither is set or the resolver is not wired.
+func resolveTelnyxAudio(deps *TelnyxIVRDeps, node *IVRNode, key string) string {
+	if node == nil {
+		return ""
+	}
+	if key == "" {
+		key = "audio_url"
+	}
+	if url, _ := node.Config[key].(string); url != "" {
+		return url
+	}
+	// Fallback: local file → signed public URL.
+	fileKey := "audio_file"
+	if key == "invalid_audio_url" {
+		fileKey = "invalid_audio_file"
+	}
+	file, _ := node.Config[fileKey].(string)
+	if file == "" || deps == nil || deps.AudioURLResolver == nil {
+		return ""
+	}
+	return deps.AudioURLResolver(file)
 }
 
 // LoadIVRFlowGraph parses an IVRFlow.Menu JSONB into a usable IVRFlowGraph.
@@ -329,7 +367,7 @@ func executeTelnyxNode(
 
 	switch node.Type {
 	case IVRNodeGreeting:
-		audioURL, _ := node.Config["audio_url"].(string)
+		audioURL := resolveTelnyxAudio(deps, node, "audio_url")
 		if audioURL == "" {
 			// Greeting with no audio — skip directly to the next node.
 			return AdvanceTelnyxIVR(ctx, deps, callControlID, encoded, "default")
@@ -398,7 +436,7 @@ func executeTelnyxMenu(
 	state *TelnyxIVRState,
 	encoded string,
 ) error {
-	audioURL, _ := node.Config["audio_url"].(string)
+	audioURL := resolveTelnyxAudio(deps, node, "audio_url")
 	if audioURL == "" {
 		// No prompt → skip directly to default edge (the flow designer
 		// probably meant to chain a greeting node in front).
@@ -407,7 +445,7 @@ func executeTelnyxMenu(
 
 	validDigits := menuValidDigits(node)
 	timeoutMs := getConfigIntT(node.Config, "timeout_seconds", 10) * 1000
-	invalidAudioURL, _ := node.Config["invalid_audio_url"].(string)
+	invalidAudioURL := resolveTelnyxAudio(deps, node, "invalid_audio_url")
 
 	return deps.Telnyx.GatherUsingAudio(ctx, callControlID, &telnyx.GatherUsingAudioRequest{
 		AudioURL:        audioURL,
@@ -438,7 +476,7 @@ func executeTelnyxGather(
 	node *IVRNode,
 	state *TelnyxIVRState,
 ) error {
-	audioURL, _ := node.Config["audio_url"].(string)
+	audioURL := resolveTelnyxAudio(deps, node, "audio_url")
 	maxDigits := getConfigIntT(node.Config, "max_digits", 10)
 	terminator, _ := node.Config["terminator"].(string)
 	if terminator == "" {

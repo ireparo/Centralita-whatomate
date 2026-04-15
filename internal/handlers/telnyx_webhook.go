@@ -90,9 +90,24 @@ func (a *App) TelnyxWebhookHandler(r *fastglue.Request) error {
 
 	// Build the dependency bundle the dispatcher functions need.
 	tnxClient := telnyx.NewClient(connection.APIKey, a.HTTPClient)
+
+	// Derive the publicly reachable base URL from this incoming webhook
+	// request. Telnyx is POSTing to the Host it was configured with, so
+	// reusing it guarantees the signed audio URLs we hand back to Telnyx
+	// resolve to the same instance it already knows about.
+	scheme := "https"
+	if !r.RequestCtx.IsTLS() && string(r.RequestCtx.Request.Header.Peek("X-Forwarded-Proto")) != "https" {
+		scheme = "http"
+	}
+	host := string(r.RequestCtx.Host())
+	baseURL := scheme + "://" + host
+
 	deps := &calling.TelnyxIVRDeps{
 		DB:     a.DB,
 		Telnyx: tnxClient,
+		AudioURLResolver: func(filename string) string {
+			return a.BuildSignedIVRAudioURL(baseURL, filename)
+		},
 	}
 
 	// Dispatch by event type. We log the dispatch error but always 200
