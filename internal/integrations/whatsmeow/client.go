@@ -327,6 +327,162 @@ func (c *Client) SendTextMessage(ctx context.Context, toPhone, body string) (str
 	return resp.ID, nil
 }
 
+// MediaPayload is the shape the handler passes to the media-send methods.
+// Kept separate from whatsmeow's types so the handlers layer does not
+// need to import the upstream proto package.
+type MediaPayload struct {
+	Data     []byte // raw bytes
+	Mime     string // e.g. "image/jpeg"
+	Filename string // used for documents; optional for other types
+	Caption  string // optional caption for image/video/document
+}
+
+// SendImageMessage uploads the bytes to WhatsApp's CDN and sends an
+// image message to toPhone. Returns the server-assigned message ID.
+func (c *Client) SendImageMessage(ctx context.Context, toPhone string, media MediaPayload) (string, error) {
+	if c.State() != StateLoggedIn {
+		return "", fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	if len(media.Data) == 0 {
+		return "", fmt.Errorf("whatsmeow: empty image payload")
+	}
+	up, err := c.wm.Upload(ctx, media.Data, whatsmeow.MediaImage)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow upload image: %w", err)
+	}
+	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	msg := &waProto.Message{
+		ImageMessage: &waProto.ImageMessage{
+			URL:           proto(up.URL),
+			DirectPath:    proto(up.DirectPath),
+			MediaKey:      up.MediaKey,
+			Mimetype:      proto(media.Mime),
+			FileEncSHA256: up.FileEncSHA256,
+			FileSHA256:    up.FileSHA256,
+			FileLength:    protoUint64(up.FileLength),
+			Caption:       proto(media.Caption),
+		},
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow send image: %w", err)
+	}
+	return resp.ID, nil
+}
+
+// SendVideoMessage is the video counterpart of SendImageMessage.
+func (c *Client) SendVideoMessage(ctx context.Context, toPhone string, media MediaPayload) (string, error) {
+	if c.State() != StateLoggedIn {
+		return "", fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	up, err := c.wm.Upload(ctx, media.Data, whatsmeow.MediaVideo)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow upload video: %w", err)
+	}
+	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	msg := &waProto.Message{
+		VideoMessage: &waProto.VideoMessage{
+			URL:           proto(up.URL),
+			DirectPath:    proto(up.DirectPath),
+			MediaKey:      up.MediaKey,
+			Mimetype:      proto(media.Mime),
+			FileEncSHA256: up.FileEncSHA256,
+			FileSHA256:    up.FileSHA256,
+			FileLength:    protoUint64(up.FileLength),
+			Caption:       proto(media.Caption),
+		},
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow send video: %w", err)
+	}
+	return resp.ID, nil
+}
+
+// SendAudioMessage sends an audio / voice note. If media.Mime starts with
+// "audio/ogg" the message is flagged as a PTT (push-to-talk / voice
+// note); otherwise it is a regular audio file.
+func (c *Client) SendAudioMessage(ctx context.Context, toPhone string, media MediaPayload) (string, error) {
+	if c.State() != StateLoggedIn {
+		return "", fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	up, err := c.wm.Upload(ctx, media.Data, whatsmeow.MediaAudio)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow upload audio: %w", err)
+	}
+	isPTT := len(media.Mime) >= 9 && media.Mime[:9] == "audio/ogg"
+	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	msg := &waProto.Message{
+		AudioMessage: &waProto.AudioMessage{
+			URL:           proto(up.URL),
+			DirectPath:    proto(up.DirectPath),
+			MediaKey:      up.MediaKey,
+			Mimetype:      proto(media.Mime),
+			FileEncSHA256: up.FileEncSHA256,
+			FileSHA256:    up.FileSHA256,
+			FileLength:    protoUint64(up.FileLength),
+			PTT:           protoBool(isPTT),
+		},
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow send audio: %w", err)
+	}
+	return resp.ID, nil
+}
+
+// SendDocumentMessage sends an arbitrary file as a WhatsApp document.
+// media.Filename shows up as the filename hint in the recipient's chat.
+func (c *Client) SendDocumentMessage(ctx context.Context, toPhone string, media MediaPayload) (string, error) {
+	if c.State() != StateLoggedIn {
+		return "", fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	up, err := c.wm.Upload(ctx, media.Data, whatsmeow.MediaDocument)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow upload document: %w", err)
+	}
+	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	msg := &waProto.Message{
+		DocumentMessage: &waProto.DocumentMessage{
+			URL:           proto(up.URL),
+			DirectPath:    proto(up.DirectPath),
+			MediaKey:      up.MediaKey,
+			Mimetype:      proto(media.Mime),
+			FileEncSHA256: up.FileEncSHA256,
+			FileSHA256:    up.FileSHA256,
+			FileLength:    protoUint64(up.FileLength),
+			FileName:      proto(media.Filename),
+			Caption:       proto(media.Caption),
+		},
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow send document: %w", err)
+	}
+	return resp.ID, nil
+}
+
+// DownloadMedia decrypts and returns the raw bytes of an incoming media
+// message. The caller passes the original *events.Message.Raw (from the
+// IncomingMessage struct) so whatsmeow can pick the right sub-proto.
+//
+// Used by the handler on incoming image/audio/video/document events to
+// save the bytes to local storage before dispatching to the chat pipeline.
+func (c *Client) DownloadMedia(ctx context.Context, msg *waProto.Message) ([]byte, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("whatsmeow download: nil message")
+	}
+	// whatsmeow.Client.DownloadAny inspects the Message proto and picks
+	// whichever media submessage is present (ImageMessage / AudioMessage
+	// / VideoMessage / DocumentMessage / StickerMessage).
+	return c.wm.DownloadAny(ctx, msg)
+}
+
+// protoUint64 / protoBool mirror `proto` for uint64 / bool fields on the
+// whatsmeow proto. Used by the media send methods.
+func protoUint64(v uint64) *uint64 { return &v }
+func protoBool(v bool) *bool       { return &v }
+
 // --- Internal event handling ---------------------------------------------
 
 func (c *Client) setState(s ClientState) {

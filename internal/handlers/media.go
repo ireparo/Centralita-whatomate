@@ -130,6 +130,48 @@ func (a *App) DownloadAndSaveMedia(ctx context.Context, mediaID string, mimeType
 	return relativePath, nil
 }
 
+// SaveMediaBytes writes pre-fetched media bytes to the local media
+// storage and returns the relative path (suitable for Message.MediaURL).
+//
+// Used by the whatsmeow incoming flow — the whatsmeow library gives us
+// decrypted bytes directly, so we skip the Meta-specific GetMediaURL +
+// DownloadMedia round-trip that DownloadAndSaveMedia does.
+//
+// The subdirectory is picked by mime prefix, same convention as
+// DownloadAndSaveMedia, so the served URL format stays consistent
+// across providers.
+func (a *App) SaveMediaBytes(data []byte, mimeType string) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("SaveMediaBytes: empty payload")
+	}
+	ext := getExtensionFromMimeType(mimeType)
+	if ext == "" {
+		ext = ".bin"
+	}
+	filename := uuid.New().String() + ext
+
+	var subdir string
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		subdir = "images"
+	case strings.HasPrefix(mimeType, "video/"):
+		subdir = "videos"
+	case strings.HasPrefix(mimeType, "audio/"):
+		subdir = "audio"
+	default:
+		subdir = "documents"
+	}
+
+	if err := a.ensureMediaDir(subdir); err != nil {
+		return "", fmt.Errorf("SaveMediaBytes: ensure dir: %w", err)
+	}
+	filePath := filepath.Join(a.getMediaStoragePath(), subdir, filename)
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return "", fmt.Errorf("SaveMediaBytes: write: %w", err)
+	}
+	return filepath.Join(subdir, filename), nil
+}
+
 // ServeMedia serves media files from local storage
 // Only authorized users who have access to the message can view the media
 func (a *App) ServeMedia(r *fastglue.Request) error {

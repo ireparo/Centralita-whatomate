@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/google/uuid"
@@ -48,11 +50,30 @@ func (a *App) OnIncomingMessage(ctx context.Context, accountID uuid.UUID, evt *w
 	// This is the core of the integration — once a Message row exists,
 	// everything downstream (chatbot, CRM event emission, agent assignment,
 	// WebSocket broadcast) fires automatically via the existing code.
+	//
+	// Phase W.2: for media types, download + decrypt via whatsmeow (raw
+	// WhatsApp CDN URLs need the message's MediaKey to decrypt) and save
+	// locally so the existing /api/media/{id} endpoint can serve them.
 	var mediaInfo *MediaInfo
-	if evt.MediaURL != "" {
-		mediaInfo = &MediaInfo{
-			MediaURL:      evt.MediaURL,
-			MediaMimeType: evt.MediaMime,
+	if evt.MediaURL != "" && evt.Raw != nil && evt.Raw.Message != nil {
+		client := a.Whatsmeow.Get(accountID)
+		if client != nil {
+			dlCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			bytes, derr := client.DownloadMedia(dlCtx, evt.Raw.Message)
+			cancel()
+			if derr == nil && len(bytes) > 0 {
+				relPath, serr := a.SaveMediaBytes(bytes, evt.MediaMime)
+				if serr == nil {
+					mediaInfo = &MediaInfo{
+						MediaURL:      relPath,
+						MediaMimeType: evt.MediaMime,
+					}
+				} else {
+					a.Log.Warn("whatsmeow: save media bytes failed", "error", serr)
+				}
+			} else if derr != nil {
+				a.Log.Warn("whatsmeow: download media failed", "error", derr, "type", evt.Type)
+			}
 		}
 	}
 	a.saveIncomingMessage(&account, contact, evt.MessageID, evt.Type, evt.Content, mediaInfo, "")
@@ -139,15 +160,66 @@ func (a *App) dispatchWhatsmeowSend(ctx context.Context, req OutgoingMessageRequ
 	case models.MessageTypeImage,
 		models.MessageTypeVideo,
 		models.MessageTypeAudio,
-		models.MessageTypeDocument,
-		models.MessageTypeTemplate,
+		models.MessageTypeDocument:
+		// Phase W.2 — resolve bytes, then delegate to the matching
+		// Send*Message method on the wrapper.
+		data, err := a.resolveWhatsmeowMediaBytes(req)
+		if err != nil {
+			return "", err
+		}
+		payload := wameow.MediaPayload{
+			Data:     data,
+			Mime:     req.MediaMimeType,
+			Filename: req.MediaFilename,
+			Caption:  req.Caption,
+		}
+		phone := req.Contact.PhoneNumber
+		switch req.Type {
+		case models.MessageTypeImage:
+			return client.SendImageMessage(ctx, phone, payload)
+		case models.MessageTypeVideo:
+			return client.SendVideoMessage(ctx, phone, payload)
+		case models.MessageTypeAudio:
+			return client.SendAudioMessage(ctx, phone, payload)
+		default: // document
+			return client.SendDocumentMessage(ctx, phone, payload)
+		}
+
+	case models.MessageTypeTemplate,
 		models.MessageTypeInteractive,
 		models.MessageTypeFlow:
-		return "", fmt.Errorf("message type %q is not supported by the WhatsApp Web provider yet (Phase W.2)", req.Type)
+		// These rely on Meta-issued constructs (template IDs, interactive
+		// payloads, flow IDs) that only exist in the Cloud API. The
+		// whatsmeow protocol has no equivalent, so we fail fast with a
+		// clear message the UI can show to the agent.
+		return "", fmt.Errorf("message type %q is only available with the Cloud API provider", req.Type)
 
 	default:
 		return "", fmt.Errorf("unsupported message type %q for whatsmeow provider", req.Type)
 	}
+}
+
+// resolveWhatsmeowMediaBytes returns the raw bytes of a media message
+// sent from the agent panel / API. The request may supply the bytes
+// directly (MediaData), or a local relative path (MediaURL) that the
+// existing media storage serves via /api/media — in the second case we
+// read the file off disk.
+func (a *App) resolveWhatsmeowMediaBytes(req OutgoingMessageRequest) ([]byte, error) {
+	if len(req.MediaData) > 0 {
+		return req.MediaData, nil
+	}
+	if req.MediaURL != "" {
+		// MediaURL coming from the agent panel is a relative path
+		// (e.g. "images/abc.jpg") that lives under the configured media
+		// storage directory. Resolve + read.
+		path := filepath.Join(a.getMediaStoragePath(), req.MediaURL)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("whatsmeow media: read %s: %w", path, err)
+		}
+		return data, nil
+	}
+	return nil, fmt.Errorf("whatsmeow send %s: no MediaData or MediaURL provided", req.Type)
 }
 
 // resolveOrCreateContact is a thin helper that reuses the same
