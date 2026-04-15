@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCallingStore } from '@/stores/calling'
 import { Button } from '@/components/ui/button'
-import { Phone, PhoneOff, PhoneIncoming, Mic, MicOff, ArrowRightLeft, Pause, Play } from 'lucide-vue-next'
+import { Phone, PhoneOff, PhoneIncoming, Mic, MicOff, ArrowRightLeft, Pause, Play, ExternalLink, UserPlus, Star } from 'lucide-vue-next'
 import CallTransferPicker from '@/components/calling/CallTransferPicker.vue'
 import { toast } from 'vue-sonner'
 
@@ -11,6 +11,18 @@ const { t } = useI18n()
 const store = useCallingStore()
 const acceptingId = ref<string | null>(null)
 const showTransferPicker = ref(false)
+
+// CRM screen-pop for the current incoming/active call. Matched by
+// caller_phone: the `call_incoming` event lands first with CRM data,
+// then `call_transfer_waiting` drives this panel open, and we look
+// up the CRM info by phone.
+const activeCallerPhone = computed(() => {
+  if (store.isOutgoingCall) return store.outgoingContactPhone
+  if (store.activeTransfer) return store.activeTransfer.caller_phone
+  if (store.waitingTransfers.length > 0) return store.waitingTransfers[0].caller_phone
+  return null
+})
+const crmPop = computed(() => store.getCrmScreenPop(activeCallerPhone.value))
 
 const formattedDuration = computed(() => {
   const m = Math.floor(store.callDuration / 60)
@@ -89,12 +101,63 @@ async function handleAccept(id: string) {
           <PhoneIncoming v-if="!store.isOnCall && firstWaiting" class="h-4 w-4 text-green-400 animate-pulse" />
           <Phone v-else class="h-4 w-4 text-green-400" />
         </div>
-        <div>
-          <p class="text-sm font-medium text-zinc-100">
-            {{ displayName }}
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-zinc-100 flex items-center gap-1.5 truncate">
+            <span class="truncate">{{ crmPop?.customer_name || displayName }}</span>
+            <Star
+              v-if="crmPop?.vip"
+              class="h-3.5 w-3.5 text-amber-400 shrink-0"
+              :aria-label="t('calling.vip')"
+            />
           </p>
           <p class="text-xs text-zinc-400">{{ statusText }}</p>
         </div>
+      </div>
+
+      <!-- CRM screen-pop: info when caller is known -->
+      <div
+        v-if="crmPop?.customer_id && (crmPop.active_tickets_count || crmPop.last_ticket || crmPop.total_spent_eur)"
+        class="mb-3 p-2 rounded-md bg-zinc-800/60 border border-zinc-700/60 text-xs text-zinc-300 space-y-1"
+      >
+        <div v-if="crmPop.active_tickets_count" class="flex items-center justify-between">
+          <span class="text-zinc-400">{{ t('calling.activeTickets') }}</span>
+          <span class="font-medium text-zinc-100">{{ crmPop.active_tickets_count }}</span>
+        </div>
+        <div v-if="crmPop.last_ticket" class="flex items-center justify-between gap-2">
+          <span class="text-zinc-400 truncate">{{ crmPop.last_ticket.device || t('calling.lastTicket') }}</span>
+          <span class="font-medium text-zinc-100 truncate">{{ crmPop.last_ticket.status }}</span>
+        </div>
+        <div v-if="crmPop.total_spent_eur" class="flex items-center justify-between">
+          <span class="text-zinc-400">{{ t('calling.totalSpent') }}</span>
+          <span class="font-medium text-zinc-100">{{ Number(crmPop.total_spent_eur).toFixed(2) }} €</span>
+        </div>
+      </div>
+
+      <!-- CRM screen-pop: action buttons -->
+      <div
+        v-if="crmPop?.lookup_attempted && (crmPop.profile_url || crmPop.create_url)"
+        class="flex gap-2 mb-3"
+      >
+        <a
+          v-if="crmPop.profile_url"
+          :href="crmPop.profile_url"
+          target="_blank"
+          rel="noopener"
+          class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
+        >
+          <ExternalLink class="h-3.5 w-3.5" />
+          {{ t('calling.openInCrm') }}
+        </a>
+        <a
+          v-else-if="crmPop.create_url"
+          :href="crmPop.create_url"
+          target="_blank"
+          rel="noopener"
+          class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium transition-colors"
+        >
+          <UserPlus class="h-3.5 w-3.5" />
+          {{ t('calling.createInCrm') }}
+        </a>
       </div>
 
       <!-- Timer (only when on active call) -->

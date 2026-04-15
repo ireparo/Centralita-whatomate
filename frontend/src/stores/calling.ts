@@ -42,6 +42,71 @@ export const useCallingStore = defineStore('calling', () => {
   const isOnHold = ref(false)
   const isTransferring = ref(false)
 
+  // CRM screen-pop state — filled when a `call_incoming` event arrives
+  // with CRM lookup fields. Keyed by normalized caller phone so the
+  // ActiveCallPanel can match a `call_transfer_waiting` to the CRM
+  // data that came in a few milliseconds earlier. Entries self-evict
+  // 10 minutes after creation to avoid unbounded growth if call
+  // cleanup events are missed.
+  interface CrmScreenPop {
+    lookup_attempted: boolean
+    customer_id?: number
+    customer_name?: string
+    profile_url?: string
+    create_url?: string
+    active_tickets_count?: number
+    total_spent_eur?: number
+    vip?: boolean
+    last_ticket?: {
+      id: number
+      tracking_token: string
+      status: string
+      device?: string
+      opened_at?: string
+      url?: string
+    }
+    stored_at: number
+  }
+  const crmScreenPops = reactive(new Map<string, CrmScreenPop>())
+
+  function normalizePhone(phone: string): string {
+    const digits = (phone || '').replace(/\D/g, '')
+    return digits.startsWith('00') ? digits.slice(2) : digits
+  }
+
+  function storeCrmScreenPop(payload: any) {
+    if (!payload?.caller_phone || !payload?.crm_lookup_attempted) return
+    const phone = normalizePhone(String(payload.caller_phone))
+    if (!phone) return
+
+    // Evict entries older than 10 minutes before inserting — keeps the
+    // map bounded even if cleanup events don't arrive.
+    const now = Date.now()
+    for (const [k, v] of crmScreenPops) {
+      if (now - v.stored_at > 10 * 60 * 1000) {
+        crmScreenPops.delete(k)
+      }
+    }
+
+    crmScreenPops.set(phone, {
+      lookup_attempted: true,
+      customer_id: payload.crm_customer_id,
+      customer_name: payload.crm_customer_name,
+      profile_url: payload.crm_profile_url,
+      create_url: payload.crm_create_url,
+      active_tickets_count: payload.crm_active_tickets_count,
+      total_spent_eur: payload.crm_total_spent_eur,
+      vip: payload.crm_vip,
+      last_ticket: payload.crm_last_ticket,
+      stored_at: now,
+    })
+  }
+
+  function getCrmScreenPop(phone: string | undefined | null): CrmScreenPop | null {
+    if (!phone) return null
+    return crmScreenPops.get(normalizePhone(String(phone))) ?? null
+  }
+
   // Computed
   const activeFlows = computed(() => ivrFlows.value.filter(f => f.is_active && f.is_call_start))
   const isOutgoingCall = computed(() => outgoingCallLogId.value !== null)
@@ -442,6 +507,13 @@ export const useCallingStore = defineStore('calling', () => {
   // WebSocket handler for call events
   function handleCallEvent(type: string, payload: any) {
     switch (type) {
+      case 'call_incoming':
+        // Stash CRM screen-pop data (if present) so the agent panel
+        // can render it when the subsequent call_transfer_waiting
+        // lands. The actual "incoming" UX is driven by
+        // call_transfer_waiting, not this event.
+        storeCrmScreenPop(payload)
+        break
       case 'call_transfer_waiting':
         // Deduplicate: only add if this transfer ID isn't already in the list
         if (!waitingTransfers.value.some(t => t.id === payload.id)) {
@@ -563,6 +635,8 @@ export const useCallingStore = defineStore('calling', () => {
     callPermissions,
     getCallPermission,
     setCallPermissionPending,
+    // CRM screen-pop
+    getCrmScreenPop,
     // WS handler
     handleCallEvent
   }

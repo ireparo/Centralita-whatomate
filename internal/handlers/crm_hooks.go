@@ -58,11 +58,39 @@ func (a *App) CRMLookupForCall(ctx context.Context, contact *models.Contact) (*c
 // broadcast payload so the agent panel can render the screen-pop with rich
 // data instead of "Unknown caller".
 //
+// When the caller IS in the CRM (lookup.Found=true): adds the full customer
+// block so the panel shows VIP badge, active tickets, total spent, etc.,
+// plus the profile URL for the "Open in CRM" button.
+//
+// When the caller is NOT in the CRM (lookup.Found=false but lookup returned
+// successfully): still adds crm_lookup_attempted=true + crm_create_url so
+// the panel can show a "Create customer in CRM" button with the phone
+// already prefilled via the query string.
+//
+// When the lookup itself failed (nil lookup): adds nothing — the panel
+// falls back to plain "Unknown caller" UX.
+//
 // Mutates the supplied map in place.
 func CRMEnrichBroadcast(payload map[string]any, lookup *crm.LookupResponse) {
-	if payload == nil || lookup == nil || !lookup.Found || lookup.Customer == nil {
+	if payload == nil || lookup == nil {
 		return
 	}
+
+	// Signal that we did attempt a CRM lookup. Without this flag the panel
+	// cannot tell apart "CRM integration disabled or lookup errored" (show
+	// nothing CRM-related) from "CRM integration up but caller not in DB"
+	// (show the Create button).
+	payload["crm_lookup_attempted"] = true
+
+	if !lookup.Found || lookup.Customer == nil {
+		// Unknown caller — expose the create URL so the agent can create
+		// the customer in one click with phone pre-filled on the CRM side.
+		if lookup.CreateURL != "" {
+			payload["crm_create_url"] = lookup.CreateURL
+		}
+		return
+	}
+
 	c := lookup.Customer
 	payload["crm_customer_id"] = c.ID
 	payload["crm_customer_name"] = c.Name

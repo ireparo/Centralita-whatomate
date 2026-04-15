@@ -2325,6 +2325,12 @@
     "dataPathPlaceholder": "data.ruta"
   },
   "calling": {
+    "openInCrm": "Abrir en CRM",
+    "createInCrm": "Crear en CRM",
+    "activeTickets": "Tickets activos",
+    "lastTicket": "Último ticket",
+    "totalSpent": "Gasto total",
+    "vip": "Cliente VIP",
     "callLogs": "Registro de llamadas",
     "callLogsDesc": "Ver y gestionar el historial de llamadas entrantes.",
     "callDetail": "Detalle de llamada",

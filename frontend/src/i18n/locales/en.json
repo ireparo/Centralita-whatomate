@@ -2327,6 +2327,12 @@
     "dataPathPlaceholder": "data.path"
   },
   "calling": {
+    "openInCrm": "Open in CRM",
+    "createInCrm": "Create in CRM",
+    "activeTickets": "Active tickets",
+    "lastTicket": "Last ticket",
+    "totalSpent": "Total spent",
+    "vip": "VIP customer",
     "callLogs": "Call Logs",
     "callLogsDesc": "View and manage incoming call history.",
     "callDetail": "Call Detail",
