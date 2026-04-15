@@ -61,6 +61,7 @@ func (a *App) OnIncomingMessage(ctx context.Context, accountID uuid.UUID, evt *w
 	// is the person who sent the message.
 	var contact *models.Contact
 	var senderName string
+	var err error
 	if evt.IsGroup {
 		contact, err = a.resolveOrCreateGroupContact(&account, evt.GroupPhone, evt.GroupJID.String(), evt.PushName)
 		if err != nil {

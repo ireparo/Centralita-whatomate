@@ -560,7 +560,7 @@ func (c *Client) SendTypingIndicator(ctx context.Context, toPhone string, isTypi
 	// The third arg is the media type being typed (empty = text). The
 	// library also accepts "audio" for recording-voice-note indicators,
 	// but we do not surface that yet.
-	return c.wm.SendChatPresence(jid, presence, types.ChatPresenceMediaText)
+	return c.wm.SendChatPresence(ctx, jid, presence, types.ChatPresenceMediaText)
 }
 
 // MarkRead sends the "read" receipt for one or more incoming messages
@@ -580,11 +580,16 @@ func (c *Client) MarkRead(ctx context.Context, messageIDs []string, senderPhone 
 		return nil
 	}
 	senderJID := types.NewJID(senderPhone, types.DefaultUserServer)
-	// whatsmeow's MarkRead takes a MessageIDs slice, a timestamp (when the
-	// agent actually saw the message — time.Now is fine for immediate
-	// marking), the chat JID, and the sender JID (same as chat for 1:1
-	// conversations; differs in groups which W.1 does not cover).
-	return c.wm.MarkRead(messageIDs, time.Now(), senderJID, senderJID)
+	// whatsmeow's MarkRead takes a ctx, a MessageIDs slice, a timestamp
+	// (when the agent actually saw the message — time.Now is fine for
+	// immediate marking), the chat JID, and the sender JID (same as chat
+	// for 1:1 conversations; differs in groups which W.1 does not cover).
+	// Trailing variadic is receipt-type overrides (default = "read").
+	ids := make([]types.MessageID, len(messageIDs))
+	for i, id := range messageIDs {
+		ids[i] = types.MessageID(id)
+	}
+	return c.wm.MarkRead(ctx, ids, time.Now(), senderJID, senderJID)
 }
 
 // SendReaction sends a reaction (emoji) to an existing message, or
@@ -676,7 +681,7 @@ func (c *Client) GetGroupInfo(ctx context.Context, groupJID string) (*GroupInfoS
 	if err != nil {
 		return nil, fmt.Errorf("whatsmeow: invalid group JID: %w", err)
 	}
-	info, err := c.wm.GetGroupInfo(jid)
+	info, err := c.wm.GetGroupInfo(ctx, jid)
 	if err != nil {
 		return nil, fmt.Errorf("whatsmeow get group info: %w", err)
 	}
@@ -755,7 +760,7 @@ func (c *Client) UpdateGroupParticipants(ctx context.Context, groupJID string, p
 	default:
 		return nil, fmt.Errorf("whatsmeow: invalid participant change %q", action)
 	}
-	result, err := c.wm.UpdateGroupParticipants(jid, participants, change)
+	result, err := c.wm.UpdateGroupParticipants(ctx, jid, participants, change)
 	if err != nil {
 		return nil, fmt.Errorf("whatsmeow update participants: %w", err)
 	}
@@ -776,7 +781,7 @@ func (c *Client) SetGroupSubject(ctx context.Context, groupJID, newSubject strin
 	if err != nil {
 		return fmt.Errorf("whatsmeow: invalid group JID: %w", err)
 	}
-	return c.wm.SetGroupName(jid, newSubject)
+	return c.wm.SetGroupName(ctx, jid, newSubject)
 }
 
 // SetGroupDescription updates the group description (the long-form
@@ -790,7 +795,7 @@ func (c *Client) SetGroupDescription(ctx context.Context, groupJID, description 
 	if err != nil {
 		return fmt.Errorf("whatsmeow: invalid group JID: %w", err)
 	}
-	return c.wm.SetGroupDescription(jid, description)
+	return c.wm.SetGroupDescription(ctx, jid, description)
 }
 
 // LeaveGroup removes the paired account from the group. Participants
@@ -805,7 +810,7 @@ func (c *Client) LeaveGroup(ctx context.Context, groupJID string) error {
 	if err != nil {
 		return fmt.Errorf("whatsmeow: invalid group JID: %w", err)
 	}
-	return c.wm.LeaveGroup(jid)
+	return c.wm.LeaveGroup(ctx, jid)
 }
 
 // CreateGroup creates a fresh WhatsApp group with the given subject and
@@ -832,7 +837,7 @@ func (c *Client) CreateGroup(ctx context.Context, subject string, participantPho
 		Name:         subject,
 		Participants: participants,
 	}
-	info, err := c.wm.CreateGroup(req)
+	info, err := c.wm.CreateGroup(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("whatsmeow create group: %w", err)
 	}
