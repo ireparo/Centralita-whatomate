@@ -115,6 +115,70 @@ const canWriteContacts = authStore.hasPermission('contacts', 'write')
 
 const messageInput = ref('')
 const messagesEndRef = ref<HTMLElement | null>(null)
+
+// --- Typing indicator (Phase W.3) ---------------------------------------
+//
+// Bidirectional typing dots. The incoming direction (remote composing)
+// comes through a WebSocket message dispatched by the useTypingIndicator
+// composable. The outgoing direction (this agent composing) fires a
+// debounced POST to /api/contacts/{id}/whatsmeow/typing — which is a
+// no-op for Cloud API accounts, so we can call it unconditionally.
+import { isTyping as isContactTypingFn } from '@/composables/useTypingIndicator'
+import { api as apiClient } from '@/services/api'
+
+const isContactTyping = computed(() =>
+  isContactTypingFn(contactsStore.currentContact?.id)
+)
+
+// Track whether we've recently told the backend "agent typing" so we do
+// not spam the endpoint on every keystroke. One start + one stop per
+// burst of typing is enough for the WhatsApp UI.
+const typingSendLock = { sent: false, stopTimer: null as ReturnType<typeof setTimeout> | null }
+
+function scheduleTypingStop() {
+  if (typingSendLock.stopTimer) clearTimeout(typingSendLock.stopTimer)
+  typingSendLock.stopTimer = setTimeout(() => {
+    sendTypingState(false)
+  }, 6000) // pause after 6 s of inactivity
+}
+
+async function sendTypingState(isTyping: boolean) {
+  const cid = contactsStore.currentContact?.id
+  if (!cid) return
+  try {
+    await apiClient.post(`/contacts/${cid}/whatsmeow/typing`, { is_typing: isTyping })
+  } catch {
+    // advisory UX — swallow failures silently
+  }
+}
+
+watch(messageInput, (next, prev) => {
+  if (!contactsStore.currentContact) return
+  const nowTyping = next.trim().length > 0
+  const wasTyping = (prev || '').trim().length > 0
+  if (nowTyping && !typingSendLock.sent) {
+    typingSendLock.sent = true
+    sendTypingState(true)
+    scheduleTypingStop()
+  } else if (nowTyping && typingSendLock.sent) {
+    scheduleTypingStop()
+  } else if (!nowTyping && wasTyping && typingSendLock.sent) {
+    typingSendLock.sent = false
+    if (typingSendLock.stopTimer) clearTimeout(typingSendLock.stopTimer)
+    sendTypingState(false)
+  }
+})
+
+// When the agent navigates away from the chat, stop the indicator on
+// the remote end so the customer does not see a stale "typing…" forever.
+watch(() => contactsStore.currentContact?.id, (newId, oldId) => {
+  if (oldId && typingSendLock.sent) {
+    typingSendLock.sent = false
+    if (typingSendLock.stopTimer) clearTimeout(typingSendLock.stopTimer)
+    // Best-effort stop for the previous contact — not awaited.
+    apiClient.post(`/contacts/${oldId}/whatsmeow/typing`, { is_typing: false }).catch(() => {})
+  }
+})
 const messageInputRef = ref<HTMLTextAreaElement | null>(null)
 const isSending = ref(false)
 const isAssignDialogOpen = ref(false)
@@ -1556,8 +1620,22 @@ async function sendMediaMessage() {
                   {{ $t('chat.marketingOptOut', 'Marketing Opt-out') }}
                 </Badge>
               </div>
-              <p class="text-[11px] text-white/50 light:text-gray-500">
-                {{ contactsStore.currentContact.phone_number }}
+              <p class="text-[11px] text-white/50 light:text-gray-500 flex items-center gap-1.5">
+                <span>{{ contactsStore.currentContact.phone_number }}</span>
+                <!-- Typing indicator: three animated dots shown while
+                     the remote end is composing. Currently only emitted
+                     by whatsmeow-provider accounts (Cloud API has no
+                     typing webhook). -->
+                <span
+                  v-if="isContactTyping"
+                  class="inline-flex items-center gap-0.5 text-emerald-400 light:text-emerald-600 ml-1"
+                  aria-live="polite"
+                >
+                  <span class="h-1 w-1 rounded-full bg-current animate-bounce" style="animation-delay: 0s"></span>
+                  <span class="h-1 w-1 rounded-full bg-current animate-bounce" style="animation-delay: 0.15s"></span>
+                  <span class="h-1 w-1 rounded-full bg-current animate-bounce" style="animation-delay: 0.3s"></span>
+                  <span class="ml-1">{{ $t('chat.typing', 'typing…') }}</span>
+                </span>
               </p>
             </div>
           </div>

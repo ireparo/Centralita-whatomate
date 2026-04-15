@@ -303,6 +303,7 @@
   },
   "chat": {
     "marketingOptOut": "Baja de marketing",
+    "typing": "escribiendo…",
     "conversations": "Conversaciones",
     "messages": "Mensajes",
     "noContacts": "No se encontraron contactos",

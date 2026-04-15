@@ -87,6 +87,9 @@ const WS_TYPE_CONVERSATION_NOTE_CREATED = 'conversation_note_created'
 const WS_TYPE_CONVERSATION_NOTE_UPDATED = 'conversation_note_updated'
 const WS_TYPE_CONVERSATION_NOTE_DELETED = 'conversation_note_deleted'
 
+// Typing indicator (Phase W.3, whatsmeow only)
+const WS_TYPE_TYPING_INDICATOR = 'typing_indicator'
+
 interface WSMessage {
   type: string
   payload: any
@@ -197,6 +200,11 @@ class WebSocketService {
           break
         case WS_TYPE_REACTION_UPDATE:
           this.handleReactionUpdate(store, message.payload)
+          break
+        case WS_TYPE_TYPING_INDICATOR:
+          // { contact_id, account_id, is_typing } — refresh the typing
+          // composable so chat views render the three-dot bubble.
+          this.handleTypingIndicator(message.payload)
           break
         case WS_TYPE_PONG:
           // Pong received, connection is alive
@@ -312,7 +320,21 @@ class WebSocketService {
   }
 
   private handleStatusUpdate(store: ReturnType<typeof useContactsStore>, payload: any) {
-    store.updateMessageStatus(payload.message_id, payload.status, payload.error_message)
+    // Phase W.3: whatsmeow's read receipts come with `wamid` instead of
+    // the internal `message_id`, so we accept either. store.updateMessageStatus
+    // already dedupes on its own.
+    const id = payload.message_id || payload.wamid
+    if (!id) return
+    store.updateMessageStatus(id, payload.status, payload.error_message)
+  }
+
+  private handleTypingIndicator(payload: { contact_id?: string; is_typing?: boolean }) {
+    if (!payload || !payload.contact_id) return
+    // Import lazily to avoid a hard dependency cycle between this service
+    // (bootstrapped very early) and the composable (Vue-reactive).
+    import('@/composables/useTypingIndicator').then(mod => {
+      mod.setTyping(payload.contact_id as string, !!payload.is_typing)
+    })
   }
 
   private handleReactionUpdate(store: ReturnType<typeof useContactsStore>, payload: any) {
