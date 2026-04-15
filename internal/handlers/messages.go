@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/templateutil"
 	"github.com/shridarpatil/whatomate/internal/utils"
@@ -19,6 +20,24 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/zerodha/fastglue"
 )
+
+// buildMessageSenderInfo returns a MessageSenderInfo to attach to outbound
+// message events mirrored to the CRM. Maps MessageSendOptions to the
+// "type" enum documented in docs/crm-integration-spec.md. If there is no
+// clear signal (no user, no SLA/chatbot flag) we fall back to "automation"
+// as a catch-all for template/campaign/system sends.
+func buildMessageSenderInfo(opts MessageSendOptions) *crm.MessageSenderInfo {
+	if opts.SentByUserID != nil {
+		return &crm.MessageSenderInfo{
+			Type:    "agent",
+			AgentID: opts.SentByUserID.String(),
+		}
+	}
+	if opts.TrackSLA {
+		return &crm.MessageSenderInfo{Type: "chatbot"}
+	}
+	return &crm.MessageSenderInfo{Type: "automation"}
+}
 
 // ============================================================================
 // Unified Message Sending
@@ -415,6 +434,19 @@ func (a *App) finalizeMessageSend(msg *models.Message, req OutgoingMessageReques
 		"whats_app_message_id": wamid,
 	})
 	a.Log.Info("Message sent", "message_id", msg.ID, "wa_message_id", wamid, "type", msg.MessageType)
+
+	// Mirror the outbound message to the external CRM (async, best-effort,
+	// retry queue on fail). No-op if CRM integration is disabled.
+	a.CRMEmitMessageEvent(req.Account.OrganizationID, crm.EventMessageOutbound, &crm.MessageOutboundData{
+		MessageID:       msg.ID.String(),
+		ToPhone:         crm.NormalizePhone(req.Contact.PhoneNumber),
+		PBXContactID:    req.Contact.ID.String(),
+		ExternalCRMID:   req.Contact.ExternalCRMID,
+		Type:            string(msg.MessageType),
+		Content:         a.getMessagePreview(req),
+		SentBy:          buildMessageSenderInfo(opts),
+		WhatsAppAccount: req.Account.Name,
+	})
 
 	// Dispatch webhook for successful send
 	if opts.DispatchWebhook {

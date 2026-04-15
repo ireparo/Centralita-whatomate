@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shridarpatil/whatomate/internal/contactutil"
+	"github.com/shridarpatil/whatomate/internal/integrations/crm"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/pkg/whatsapp"
 )
@@ -2269,6 +2270,18 @@ func (a *App) saveIncomingMessage(account *models.WhatsAppAccount, contact *mode
 
 	// Broadcast new message via WebSocket
 	a.broadcastNewMessage(account.OrganizationID, &message, contact)
+
+	// Mirror the message to the external CRM (async, best-effort, retry queue on fail).
+	a.CRMEmitMessageEvent(account.OrganizationID, crm.EventMessageInbound, &crm.MessageInboundData{
+		MessageID:       message.ID.String(),
+		FromPhone:       crm.NormalizePhone(contact.PhoneNumber),
+		PBXContactID:    contact.ID.String(),
+		ExternalCRMID:   contact.ExternalCRMID,
+		Type:            msgType,
+		Content:         content,
+		MediaURL:        message.MediaURL,
+		WhatsAppAccount: account.Name,
+	})
 
 	// Dispatch webhook for incoming message
 	a.DispatchWebhook(account.OrganizationID, models.WebhookEventMessageIncoming, MessageEventData{
