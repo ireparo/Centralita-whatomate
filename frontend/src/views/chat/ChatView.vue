@@ -98,7 +98,12 @@ import { useNotesStore } from '@/stores/notes'
 import { useHeaderMedia } from '@/composables/useHeaderMedia'
 import { CreateContactDialog } from '@/components/shared'
 import HeaderMediaUpload from '@/components/shared/HeaderMediaUpload.vue'
-import { Info } from 'lucide-vue-next'
+import WhatsmeowGroupDialog from '@/components/chat/WhatsmeowGroupDialog.vue'
+import { Info, Users } from 'lucide-vue-next'
+
+// Phase W.5 — group management dialog is opened from the "Group"
+// badge click in the chat header when the current contact is a group.
+const groupDialogOpen = ref(false)
 
 const { t } = useI18n()
 const route = useRoute()
@@ -1615,10 +1620,18 @@ async function sendMediaMessage() {
                 </p>
                 <!-- Group badge: lets the agent tell at a glance that
                      this conversation is a WhatsApp group and every
-                     message has a sender attribution rendered above it. -->
-                <Badge v-if="contactsStore.currentContact?.is_group" class="text-[10px] h-5 bg-indigo-500/20 text-indigo-400 light:bg-indigo-100 light:text-indigo-700">
+                     message has a sender attribution rendered above it.
+                     Clickable — opens the group admin dialog (Phase W.5). -->
+                <button
+                  v-if="contactsStore.currentContact?.is_group"
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded text-[10px] h-5 px-1.5 bg-indigo-500/20 text-indigo-400 light:bg-indigo-100 light:text-indigo-700 hover:bg-indigo-500/30 light:hover:bg-indigo-200 transition-colors"
+                  :title="$t('whatsmeowGroup.manage', 'Manage group')"
+                  @click="groupDialogOpen = true"
+                >
+                  <Users class="h-3 w-3" />
                   {{ $t('chat.group', 'Group') }}
-                </Badge>
+                </button>
                 <Badge v-if="activeTransferId" class="text-[10px] h-5 bg-orange-500/20 text-orange-400 light:bg-orange-100 light:text-orange-700">
                   Paused
                 </Badge>
@@ -2523,6 +2536,16 @@ async function sendMediaMessage() {
 
     <!-- Add Contact Dialog -->
     <CreateContactDialog v-model:open="isAddContactOpen" @created="onContactCreated" />
+
+    <!-- WhatsApp group admin (Phase W.5). Mounted once, shown only
+         for group contacts via the "Group" badge click. -->
+    <WhatsmeowGroupDialog
+      v-if="contactsStore.currentContact?.is_group"
+      :contact-id="contactsStore.currentContact.id"
+      v-model:open="groupDialogOpen"
+      @subject-changed="(s: string) => { if (contactsStore.currentContact) contactsStore.currentContact.group_subject = s }"
+      @left="() => { groupDialogOpen = false }"
+    />
   </div>
 </template>
 

@@ -525,6 +525,50 @@ export const whatsmeowService = {
   },
 }
 
+// Phase W.5: WhatsApp group management via whatsmeow.
+export interface WhatsmeowGroupParticipant {
+  phone: string
+  display_name?: string
+  is_admin: boolean
+  is_super_admin: boolean
+}
+
+export interface WhatsmeowGroupInfo {
+  jid: string
+  subject: string
+  description?: string
+  owner_phone?: string
+  created_at?: string
+  participants: WhatsmeowGroupParticipant[]
+}
+
+export type WhatsmeowParticipantAction = 'add' | 'remove' | 'promote' | 'demote'
+
+export const whatsmeowGroupService = {
+  create: (accountId: string, subject: string, participantPhones: string[]) =>
+    api.post<{ group: WhatsmeowGroupInfo; contact_id: string }>(
+      `/accounts/${accountId}/whatsmeow/groups`,
+      { subject, participant_phones: participantPhones }
+    ),
+  info: (contactId: string) =>
+    api.get<WhatsmeowGroupInfo>(`/contacts/${contactId}/whatsmeow/group`),
+  updateParticipants: (
+    contactId: string,
+    action: WhatsmeowParticipantAction,
+    phones: string[]
+  ) =>
+    api.post<{ action: string; accepted: string[] }>(
+      `/contacts/${contactId}/whatsmeow/group/participants`,
+      { action, phones }
+    ),
+  setSubject: (contactId: string, subject: string) =>
+    api.put<{ subject: string }>(`/contacts/${contactId}/whatsmeow/group/subject`, {
+      subject,
+    }),
+  leave: (contactId: string) =>
+    api.post<{ status: string }>(`/contacts/${contactId}/whatsmeow/group/leave`),
+}
+
 // Meta WhatsApp Analytics Types
 export type MetaAnalyticsType =
   | 'analytics'
