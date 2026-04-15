@@ -399,6 +399,81 @@ export const agentAnalyticsService = {
     api.get('/analytics/agents', { params })
 }
 
+// Call Analytics (Phase 2.7): aggregates over the CallLog table.
+export interface CallAnalyticsSummary {
+  total_calls: number
+  answered_calls: number
+  missed_calls: number
+  outgoing_calls: number
+  incoming_calls: number
+  answered_rate: number
+  missed_rate: number
+  avg_duration_secs: number
+  total_duration_secs: number
+}
+
+export interface CallDailyTrendPoint {
+  date: string
+  total: number
+  answered: number
+  missed: number
+  avg_duration_secs: number
+}
+
+export interface CallHourlyBucket {
+  hour: number
+  total: number
+}
+
+export interface CallStatusBucket {
+  status: string
+  count: number
+}
+
+export interface CallChannelBucket {
+  channel: string
+  count: number
+}
+
+export interface CallIVRFlowBucket {
+  flow_id: string
+  flow_name: string
+  count: number
+}
+
+export interface CallAgentBucket {
+  agent_id: string
+  agent_name: string
+  handled: number
+  avg_duration_secs: number
+  total_duration_secs: number
+}
+
+export interface CallAnalyticsResponse {
+  summary: CallAnalyticsSummary
+  daily_trend: CallDailyTrendPoint[]
+  hourly_distribution: CallHourlyBucket[]
+  status_breakdown: CallStatusBucket[]
+  channel_breakdown: CallChannelBucket[]
+  top_ivr_flows: CallIVRFlowBucket[]
+  top_agents: CallAgentBucket[]
+  range: {
+    start_date: string
+    end_date: string
+    channel?: string
+    direction?: string
+  }
+}
+
+export const callAnalyticsService = {
+  get: (params?: {
+    start_date?: string
+    end_date?: string
+    channel?: string
+    direction?: string
+  }) => api.get<CallAnalyticsResponse>('/analytics/calls', { params }),
+}
+
 // Meta WhatsApp Analytics Types
 export type MetaAnalyticsType =
   | 'analytics'

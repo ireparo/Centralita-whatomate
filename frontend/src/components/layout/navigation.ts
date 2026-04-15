@@ -113,13 +113,19 @@ export const navigationSections: NavSection[] = [
   },
   {
     label: 'nav.sectionAnalytics',
-    permissions: ['analytics.agents', 'analytics'],
+    permissions: ['analytics.agents', 'analytics', 'call_logs'],
     items: [
       {
         name: 'nav.agentAnalytics',
         path: '/analytics/agents',
         icon: BarChart3,
         permission: 'analytics.agents'
+      },
+      {
+        name: 'nav.callAnalytics',
+        path: '/analytics/calls',
+        icon: PhoneCall,
+        permission: 'call_logs'
       },
       {
         name: 'nav.metaInsights',

@@ -159,6 +159,12 @@ const router = createRouter({
           meta: { permission: 'analytics.agents' }
         },
         {
+          path: 'analytics/calls',
+          name: 'call-analytics',
+          component: () => import('@/views/analytics/CallAnalyticsView.vue'),
+          meta: { permission: 'call_logs' }
+        },
+        {
           path: 'analytics/meta-insights',
           name: 'meta-insights',
           component: () => import('@/views/analytics/MetaInsightsView.vue'),

@@ -255,6 +255,7 @@
     "aiContexts": "AI Contexts",
     "transfers": "Transfers",
     "agentAnalytics": "Agent Analytics",
+    "callAnalytics": "Call Analytics",
     "metaInsights": "Meta Insights",
     "templates": "Templates",
     "campaigns": "Campaigns",
@@ -2200,6 +2201,67 @@
     "confirmEnableDescription": "The chatbot will start responding to incoming messages automatically.",
     "fetchErrorTitle": "Failed to Load",
     "fetchErrorDescription": "Could not load chatbot settings. Please try again."
+  },
+  "callAnalytics": {
+    "title": "Call Analytics",
+    "subtitle": "KPIs and trends for inbound and outbound calls",
+    "fetchError": "Could not load analytics.",
+    "fetchErrorTitle": "Load error",
+    "noData": "No data in the selected range.",
+    "filters": {
+      "allChannels": "All channels",
+      "allDirections": "All directions",
+      "incoming": "Incoming",
+      "outgoing": "Outgoing"
+    },
+    "channels": {
+      "whatsapp": "WhatsApp",
+      "telnyx": "PSTN (Telnyx)"
+    },
+    "statuses": {
+      "ringing": "Ringing",
+      "answered": "Answered",
+      "completed": "Completed",
+      "missed": "Missed",
+      "rejected": "Rejected",
+      "failed": "Failed",
+      "transferring": "Transferring",
+      "initiating": "Initiating",
+      "accepted": "Accepted"
+    },
+    "kpi": {
+      "totalCalls": "Total calls",
+      "answered": "Answered",
+      "missed": "Missed",
+      "avgDuration": "Avg duration",
+      "incomingOutgoing": "Incoming / Outgoing",
+      "totalTalkTime": "Total talk time",
+      "range": "Range"
+    },
+    "dailyTrend": "Daily trend",
+    "dailyTrendDesc": "Call volume by day: total / answered / missed.",
+    "hourlyDistribution": "Hourly distribution",
+    "hourlyDistributionDesc": "When calls arrive during the day (useful for staffing).",
+    "statusBreakdown": "Status breakdown",
+    "statusBreakdownDesc": "Call distribution by final status.",
+    "channelBreakdown": "Channel breakdown",
+    "channelBreakdownDesc": "WhatsApp vs PSTN (Telnyx).",
+    "topIVRFlows": "Top IVR flows",
+    "topIVRFlowsDesc": "The 10 IVR flows with the highest call volume.",
+    "topAgents": "Top agents",
+    "topAgentsDesc": "The 10 agents with the most calls handled in the range.",
+    "agents": {
+      "name": "Agent",
+      "handled": "Handled",
+      "avgDuration": "Avg duration",
+      "totalDuration": "Total time"
+    },
+    "series": {
+      "total": "Total",
+      "answered": "Answered",
+      "missed": "Missed",
+      "calls": "Calls"
+    }
   },
   "agentAnalytics": {
     "title": "Agent Analytics",

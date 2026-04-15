@@ -253,6 +253,7 @@
     "aiContexts": "Contextos IA",
     "transfers": "Transferencias",
     "agentAnalytics": "Analíticas de agentes",
+    "callAnalytics": "Analíticas de llamadas",
     "metaInsights": "Información de Meta",
     "templates": "Plantillas",
     "campaigns": "Campañas",
@@ -2198,6 +2199,67 @@
     "confirmEnableDescription": "El chatbot empezará a responder automáticamente a los mensajes entrantes.",
     "fetchErrorTitle": "Error al cargar",
     "fetchErrorDescription": "No se pudieron cargar los ajustes del chatbot. Inténtalo de nuevo."
+  },
+  "callAnalytics": {
+    "title": "Analíticas de llamadas",
+    "subtitle": "KPIs y tendencias de llamadas entrantes y salientes",
+    "fetchError": "No se pudieron cargar las analíticas.",
+    "fetchErrorTitle": "Error al cargar",
+    "noData": "No hay datos en el rango seleccionado.",
+    "filters": {
+      "allChannels": "Todos los canales",
+      "allDirections": "Todas las direcciones",
+      "incoming": "Entrantes",
+      "outgoing": "Salientes"
+    },
+    "channels": {
+      "whatsapp": "WhatsApp",
+      "telnyx": "PSTN (Telnyx)"
+    },
+    "statuses": {
+      "ringing": "Sonando",
+      "answered": "Contestada",
+      "completed": "Completada",
+      "missed": "Perdida",
+      "rejected": "Rechazada",
+      "failed": "Fallida",
+      "transferring": "Transfiriendo",
+      "initiating": "Iniciando",
+      "accepted": "Aceptada"
+    },
+    "kpi": {
+      "totalCalls": "Llamadas totales",
+      "answered": "Contestadas",
+      "missed": "Perdidas",
+      "avgDuration": "Duración media",
+      "incomingOutgoing": "Entrantes / Salientes",
+      "totalTalkTime": "Tiempo total en llamada",
+      "range": "Rango"
+    },
+    "dailyTrend": "Tendencia diaria",
+    "dailyTrendDesc": "Volumen de llamadas día a día, total / contestadas / perdidas.",
+    "hourlyDistribution": "Distribución por hora",
+    "hourlyDistributionDesc": "Momento del día en que entran más llamadas (útil para planificar turnos).",
+    "statusBreakdown": "Desglose por estado",
+    "statusBreakdownDesc": "Distribución de llamadas por estado final.",
+    "channelBreakdown": "Desglose por canal",
+    "channelBreakdownDesc": "WhatsApp vs telefonía PSTN (Telnyx).",
+    "topIVRFlows": "Flujos IVR más usados",
+    "topIVRFlowsDesc": "Los 10 flujos IVR con más tráfico.",
+    "topAgents": "Agentes que más llamadas atienden",
+    "topAgentsDesc": "Los 10 agentes con mayor volumen de llamadas en el rango.",
+    "agents": {
+      "name": "Agente",
+      "handled": "Atendidas",
+      "avgDuration": "Duración media",
+      "totalDuration": "Tiempo total"
+    },
+    "series": {
+      "total": "Total",
+      "answered": "Contestadas",
+      "missed": "Perdidas",
+      "calls": "Llamadas"
+    }
   },
   "agentAnalytics": {
     "title": "Analíticas de agentes",
