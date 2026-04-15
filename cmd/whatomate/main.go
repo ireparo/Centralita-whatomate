@@ -591,6 +591,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/me/settings", app.UpdateCurrentUserSettings)
 	g.PUT("/api/me/password", app.ChangePassword)
 	g.PUT("/api/me/availability", app.UpdateAvailability)
+	g.PUT("/api/me/phone", app.UpdateCurrentUserPhone)
 	g.GET("/api/me/organizations", app.ListMyOrganizations)
 
 	// User Management (admin only - enforced by middleware)
@@ -770,6 +771,11 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	// Public signed IVR audio endpoint — used by Telnyx to fetch IVR prompts
 	// during a call. Auth is via HMAC in the URL; no JWT required.
 	g.GET("/api/public/ivr-audio/{filename}", app.ServeSignedIVRAudio)
+
+	// Telnyx click-to-call — agent initiates an outbound PSTN call to a
+	// contact. Callback pattern: dials the agent's phone first, transfers
+	// to the contact on answer.
+	g.POST("/api/calls/telnyx/click-to-call", app.InitiateClickToCall)
 
 	// Canned Responses
 	g.GET("/api/canned-responses", app.ListCannedResponses)

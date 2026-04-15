@@ -1390,7 +1390,21 @@
     "passwordMismatch": "New passwords do not match",
     "passwordTooShort": "New password must be at least 6 characters",
     "passwordChanged": "Password changed successfully",
-    "passwordChangeFailed": "Failed to change password"
+    "passwordChangeFailed": "Failed to change password",
+    "phoneTitle": "Personal phone (click-to-call)",
+    "phoneDesc": "When you click the \"Call\" button on a contact, Telnyx dials this number first. When you pick up, it connects you to the customer.",
+    "phoneLabel": "Your number",
+    "phoneHint": "International format. Leave empty to disable click-to-call.",
+    "phoneSaved": "Phone updated successfully.",
+    "phoneSaveFailed": "Could not save the phone number."
+  },
+  "contact": {
+    "clickToCall": {
+      "cta": "Call",
+      "ringingAgent": "Calling your phone — once you pick up, we'll connect the customer.",
+      "needAgentPhone": "Set your personal phone in Profile → Phone to use click-to-call.",
+      "failed": "Could not place the call."
+    }
   },
   "accounts": {
     "title": "WhatsApp Accounts",

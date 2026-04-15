@@ -1227,6 +1227,34 @@ export const telnyxConnectionsService = {
     api.post<{ ok: boolean; error?: string }>('/telnyx/connections/test', data || {}),
 }
 
+// Agent's personal phone (for click-to-call callback).
+export const userPhoneService = {
+  update: (phoneNumber: string) =>
+    api.put<{ phone_number: string }>('/me/phone', { phone_number: phoneNumber }),
+}
+
+// Telnyx click-to-call (outbound PSTN via callback pattern).
+//
+// The backend dials the agent's personal phone first; once they pick up,
+// Telnyx transfers the leg to the contact's phone. This means:
+//   - Agent MUST have set their phone_number in their profile.
+//   - The org MUST have at least one active TelnyxNumber configured.
+export interface ClickToCallResponse {
+  call_log_id: string
+  call_control_id: string
+  to: string
+  from: string
+  status: string
+}
+
+export const telnyxCallService = {
+  clickToCall: (contactId: string, fromNumber?: string) =>
+    api.post<ClickToCallResponse>('/calls/telnyx/click-to-call', {
+      contact_id: contactId,
+      ...(fromNumber ? { from_number: fromNumber } : {}),
+    }),
+}
+
 export const telnyxNumbersService = {
   list: (params?: { connection_id?: string }) =>
     api.get<{ numbers: TelnyxNumber[]; total: number }>('/telnyx/numbers', { params }),

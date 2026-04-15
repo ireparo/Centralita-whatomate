@@ -1388,7 +1388,21 @@
     "passwordMismatch": "Las nuevas contraseñas no coinciden",
     "passwordTooShort": "La nueva contraseña debe tener al menos 6 caracteres",
     "passwordChanged": "Contraseña cambiada exitosamente",
-    "passwordChangeFailed": "Error al cambiar la contraseña"
+    "passwordChangeFailed": "Error al cambiar la contraseña",
+    "phoneTitle": "Teléfono personal (click-to-call)",
+    "phoneDesc": "Cuando pulses el botón «Llamar» de un contacto, Telnyx marcará primero a este número. Al descolgar, conecta automáticamente con el cliente.",
+    "phoneLabel": "Tu número",
+    "phoneHint": "Formato internacional. Déjalo vacío para desactivar el click-to-call.",
+    "phoneSaved": "Teléfono actualizado correctamente.",
+    "phoneSaveFailed": "No se pudo guardar el teléfono."
+  },
+  "contact": {
+    "clickToCall": {
+      "cta": "Llamar",
+      "ringingAgent": "Llamando a tu teléfono — al descolgar, conectaremos con el cliente.",
+      "needAgentPhone": "Configura tu teléfono personal en Perfil → Teléfono para poder usar click-to-call.",
+      "failed": "No se pudo iniciar la llamada."
+    }
   },
   "accounts": {
     "title": "Cuentas de WhatsApp",

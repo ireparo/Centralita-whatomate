@@ -141,9 +141,19 @@ func (a *App) dispatchTelnyxEvent(
 	// ---- Inbound call lifecycle ---------------------------------------
 
 	case telnyx.EventCallInitiated:
+		// For click-to-call (outbound) flows, we already created the
+		// CallLog at Dial time. Skip the inbound-style handler for these.
+		if state, _ := DecodeClickToCallState(payload.ClientState); state != nil {
+			return nil
+		}
 		return a.handleTelnyxCallInitiated(ctx, deps, connection, payload)
 
 	case telnyx.EventCallAnswered:
+		// Click-to-call: the agent leg just answered. Trigger the Transfer
+		// to the customer instead of treating it as an IVR answer.
+		if handled, err := a.handleClickToCallAgentAnswered(ctx, connection, payload.CallControlID, payload.ClientState); handled {
+			return err
+		}
 		return a.handleTelnyxCallAnswered(ctx, deps, connection, payload)
 
 	// ---- IVR continuation ---------------------------------------------
@@ -175,6 +185,10 @@ func (a *App) dispatchTelnyxEvent(
 	case telnyx.EventCallHangup:
 		hangup, err := telnyx.ParseHangupPayload(env)
 		if err != nil {
+			return err
+		}
+		// Click-to-call: finalize the CallLog row we created at Dial time.
+		if handled, err := a.handleClickToCallHangup(ctx, connection, hangup.ClientState, hangup.HangupCause, hangup.HangupSource); handled {
 			return err
 		}
 		return a.handleTelnyxHangup(ctx, connection, hangup)

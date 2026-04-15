@@ -120,6 +120,14 @@ type User struct {
 	SSOProvider   string `gorm:"size:50" json:"sso_provider,omitempty"`     // google, microsoft, github, facebook, custom
 	SSOProviderID string `gorm:"size:255" json:"sso_provider_id,omitempty"` // External user ID from provider
 
+	// PhoneNumber is the agent's own phone (E.164 without the leading "+").
+	// Used by the Telnyx click-to-call callback flow: when an agent clicks
+	// "Call" on a contact, Telnyx dials THIS number first; once the agent
+	// picks up, Telnyx transfers the leg to the customer. Optional — if
+	// empty, click-to-call falls back to whatever the org configured (or
+	// refuses the request).
+	PhoneNumber string `gorm:"size:32" json:"phone_number,omitempty"`
+
 	// Relations
 	Organization      *Organization      `gorm:"foreignKey:OrganizationID" json:"organization,omitempty"`
 	Role              *CustomRole        `gorm:"foreignKey:RoleID" json:"role,omitempty"`

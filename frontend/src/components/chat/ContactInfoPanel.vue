@@ -22,15 +22,17 @@ import {
   CommandItem,
   CommandList
 } from '@/components/ui/command'
-import { X, ChevronDown, Phone, User, Plus, Check, Tags, Loader2 } from 'lucide-vue-next'
+import { X, ChevronDown, Phone, PhoneCall, User, Plus, Check, Tags, Loader2 } from 'lucide-vue-next'
 import { TagBadge } from '@/components/ui/tag-badge'
 import MetadataSection from '@/components/chat/MetadataSection.vue'
 import { getInitials, getAvatarGradient, formatLabel } from '@/lib/utils'
 import { getTagColorClass } from '@/lib/constants'
 import { useTagsStore } from '@/stores/tags'
 import { useAuthStore } from '@/stores/auth'
-import { contactsService, type Tag } from '@/services/api'
+import { contactsService, telnyxCallService, type Tag } from '@/services/api'
 import { toast } from 'vue-sonner'
+import { useI18n } from 'vue-i18n'
+import { getErrorMessage } from '@/lib/api-utils'
 import type { Contact } from '@/stores/contacts'
 
 interface PanelFieldConfig {
@@ -243,6 +245,37 @@ async function updateContactTags(tags: string[]) {
   }
 }
 
+// --- Click-to-call --------------------------------------------------------
+//
+// Places an outbound call to the contact through Telnyx. Uses the callback
+// pattern: Telnyx dials the agent's personal phone first (stored on User),
+// then transfers the leg to the contact when the agent picks up. That is
+// why this button is disabled when the agent has no phone_number set.
+
+const { t } = useI18n()
+const isDialing = ref(false)
+const canClickToCall = computed(() => {
+  const me = authStore.user as any
+  return !!(me && me.phone_number && props.contact?.phone_number)
+})
+
+async function clickToCall() {
+  if (!props.contact) return
+  if (!canClickToCall.value) {
+    toast.error(t('contact.clickToCall.needAgentPhone'))
+    return
+  }
+  isDialing.value = true
+  try {
+    await telnyxCallService.clickToCall(props.contact.id)
+    toast.success(t('contact.clickToCall.ringingAgent'))
+  } catch (e) {
+    toast.error(getErrorMessage(e, t('contact.clickToCall.failed')))
+  } finally {
+    isDialing.value = false
+  }
+}
+
 </script>
 
 <template>
@@ -281,6 +314,22 @@ async function updateContactTags(tags: string[]) {
           <div class="flex items-center gap-1 text-sm text-muted-foreground mt-1">
             <Phone class="h-3 w-3" />
             <span>{{ contact.phone_number }}</span>
+          </div>
+          <!-- Click-to-call (Telnyx callback pattern): disabled until the
+               agent sets their own phone number in the profile. -->
+          <div class="mt-2 flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              class="h-7 text-xs"
+              :disabled="!canClickToCall || isDialing"
+              :title="canClickToCall ? $t('contact.clickToCall.cta') : $t('contact.clickToCall.needAgentPhone')"
+              @click="clickToCall"
+            >
+              <Loader2 v-if="isDialing" class="h-3 w-3 mr-1.5 animate-spin" />
+              <PhoneCall v-else class="h-3 w-3 mr-1.5" />
+              {{ $t('contact.clickToCall.cta') }}
+            </Button>
           </div>
         </div>
 
