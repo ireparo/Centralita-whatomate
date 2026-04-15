@@ -719,6 +719,20 @@ func (c *Client) SetGroupSubject(ctx context.Context, groupJID, newSubject strin
 	return c.wm.SetGroupName(jid, newSubject)
 }
 
+// SetGroupDescription updates the group description (the long-form
+// text under the subject on the WhatsApp info screen). Empty string
+// clears the description.
+func (c *Client) SetGroupDescription(ctx context.Context, groupJID, description string) error {
+	if c.State() != StateLoggedIn {
+		return fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	jid, err := types.ParseJID(groupJID)
+	if err != nil {
+		return fmt.Errorf("whatsmeow: invalid group JID: %w", err)
+	}
+	return c.wm.SetGroupDescription(jid, description)
+}
+
 // LeaveGroup removes the paired account from the group. Participants
 // see "<you> left" as a system message. The Contact row on iReparo
 // side is not deleted (history preserved); an admin can flag it

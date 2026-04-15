@@ -694,6 +694,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/contacts/{id}/whatsmeow/group", app.GetWhatsmeowGroupInfo)
 	g.POST("/api/contacts/{id}/whatsmeow/group/participants", app.UpdateWhatsmeowGroupParticipants)
 	g.PUT("/api/contacts/{id}/whatsmeow/group/subject", app.SetWhatsmeowGroupSubject)
+	g.PUT("/api/contacts/{id}/whatsmeow/group/description", app.SetWhatsmeowGroupDescription)
 	g.POST("/api/contacts/{id}/whatsmeow/group/leave", app.LeaveWhatsmeowGroup)
 	g.GET("/api/accounts/{id}/business_profile", app.GetBusinessProfile)
 	g.PUT("/api/accounts/{id}/business_profile", app.UpdateBusinessProfile)

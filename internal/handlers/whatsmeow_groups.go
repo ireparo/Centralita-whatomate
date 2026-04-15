@@ -252,6 +252,39 @@ func (a *App) SetWhatsmeowGroupSubject(r *fastglue.Request) error {
 	return r.SendEnvelope(map[string]any{"subject": req.Subject})
 }
 
+// SetWhatsmeowGroupDescription handles PUT
+// /api/contacts/{id}/whatsmeow/group/description. Empty body clears it.
+func (a *App) SetWhatsmeowGroupDescription(r *fastglue.Request) error {
+	orgID, userID, err := a.getOrgAndUserID(r)
+	if err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+	}
+	if !a.HasPermission(userID, models.ResourceContacts, models.ActionWrite, orgID) {
+		return r.SendErrorEnvelope(fasthttp.StatusForbidden, "You do not have permission", nil, "")
+	}
+	contact, accountID, errResp := a.loadGroupContactAndAccount(r, orgID)
+	if errResp != nil {
+		return errResp
+	}
+	client := a.Whatsmeow.Get(accountID)
+	if client == nil {
+		return r.SendErrorEnvelope(fasthttp.StatusFailedDependency, "WhatsApp session not connected", nil, "")
+	}
+
+	var req struct {
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(r.RequestCtx.PostBody(), &req)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := client.SetGroupDescription(ctx, contact.GroupJID, req.Description); err != nil {
+		a.Log.Warn("whatsmeow set group description failed", "error", err)
+		return r.SendErrorEnvelope(fasthttp.StatusBadGateway, err.Error(), nil, "")
+	}
+	return r.SendEnvelope(map[string]any{"description": req.Description})
+}
+
 // LeaveWhatsmeowGroup handles POST /api/contacts/{id}/whatsmeow/group/leave.
 func (a *App) LeaveWhatsmeowGroup(r *fastglue.Request) error {
 	orgID, userID, err := a.getOrgAndUserID(r)
