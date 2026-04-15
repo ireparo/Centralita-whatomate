@@ -302,6 +302,21 @@ type WhatsAppAccount struct {
 	BaseModel
 	OrganizationID     uuid.UUID  `gorm:"type:uuid;index;not null" json:"organization_id"`
 	Name               string     `gorm:"size:100;uniqueIndex:idx_wa_org_name;not null" json:"name"` // Unique per org, used as reference
+
+	// Provider selects which WhatsApp transport this account uses:
+	//   - "cloud_api" (default) — Meta's official WhatsApp Cloud API. Uses
+	//     AppID / PhoneID / BusinessID / AccessToken / webhook verify.
+	//   - "whatsmeow"             — reverse-engineered WhatsApp Web protocol
+	//     via the go.mau.fi/whatsmeow library. Uses QR pairing stored in
+	//     the whatsmeow_device table; the Meta-specific columns (AppID,
+	//     PhoneID, AccessToken, etc.) are unused for these accounts.
+	//
+	// VIOLATES WhatsApp Terms of Service when provider=whatsmeow. Numbers
+	// can be banned at Meta's discretion — intended for cases where the
+	// Cloud API is unavailable or uneconomical, with a user-facing
+	// disclaimer in the UI.
+	Provider string `gorm:"size:20;not null;default:'cloud_api'" json:"provider"`
+
 	AppID              string     `gorm:"size:100" json:"app_id"`                                    // Meta App ID
 	PhoneID            string     `gorm:"size:100;not null" json:"phone_id"`
 	BusinessID         string     `gorm:"size:100;not null" json:"business_id"`
@@ -313,6 +328,11 @@ type WhatsAppAccount struct {
 	IsDefaultOutgoing  bool       `gorm:"default:false" json:"is_default_outgoing"`
 	AutoReadReceipt    bool       `gorm:"default:false" json:"auto_read_receipt"`
 	Status             string     `gorm:"size:20;default:'active'" json:"status"`
+
+	// WhatsmeowJID is the WhatsApp JID of the paired device, only set for
+	// accounts with provider="whatsmeow". Format is "<phone>:<device>@s.whatsapp.net".
+	WhatsmeowJID string `gorm:"size:64;index" json:"whatsmeow_jid,omitempty"`
+
 	CreatedByID        *uuid.UUID `gorm:"type:uuid" json:"created_by_id,omitempty"`
 	UpdatedByID        *uuid.UUID `gorm:"type:uuid" json:"updated_by_id,omitempty"`
 

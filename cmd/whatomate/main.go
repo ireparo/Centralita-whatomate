@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/shridarpatil/whatomate/internal/assignment"
 	"github.com/shridarpatil/whatomate/internal/calling"
@@ -21,12 +22,15 @@ import (
 	"github.com/shridarpatil/whatomate/internal/frontend"
 	"github.com/shridarpatil/whatomate/internal/handlers"
 	"github.com/shridarpatil/whatomate/internal/integrations/crm"
+	wameow "github.com/shridarpatil/whatomate/internal/integrations/whatsmeow"
 	"github.com/shridarpatil/whatomate/internal/middleware"
+	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/queue"
 	"github.com/shridarpatil/whatomate/internal/websocket"
 	"github.com/shridarpatil/whatomate/internal/worker"
 	"github.com/shridarpatil/whatomate/pkg/whatsapp"
 	"github.com/valyala/fasthttp"
+	waLog "go.mau.fi/whatsmeow/util/log"
 	"github.com/zerodha/fastglue"
 	"github.com/zerodha/logf"
 )
@@ -252,6 +256,60 @@ func runServer(args []string) {
 		go crm.NewQueueWorker(db, app.CRM, lo).Run(crmQueueCtx)
 	} else {
 		lo.Info("CRM integration disabled (integrations.crm.enabled = false)")
+	}
+
+	// Initialize whatsmeow session manager (Phase W.1 — unofficial WhatsApp
+	// Web protocol alternative to the Cloud API). The manager holds one
+	// *whatsmeow.Client per paired account and bridges events back to the
+	// App through the EventSink interface (handlers/whatsmeow_sink.go).
+	//
+	// The container runs its own schema migrations against our Postgres
+	// DB under `whatsmeow_*` table names — they do not collide with GORM.
+	whatsmeowDSN := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Name,
+		cfg.Database.SSLMode,
+	)
+	wmMgr, err := wameow.NewSessionManager(context.Background(), wameow.SessionManagerConfig{
+		PostgresDSN: whatsmeowDSN,
+		Sink:        app,
+		Log:         waLog.Stdout("whatsmeow", "INFO", true),
+	})
+	if err != nil {
+		lo.Warn("whatsmeow session manager init failed — unofficial WhatsApp provider will be unavailable",
+			"error", err)
+	} else {
+		app.Whatsmeow = wmMgr
+		lo.Info("whatsmeow session manager initialized")
+		// Warm up sessions for already-paired accounts. This lets incoming
+		// messages start flowing without requiring the admin to open the
+		// account page after a restart.
+		var refs []wameow.AccountRef
+		rows, err := db.Model(&models.WhatsAppAccount{}).
+			Where("provider = ? AND whatsmeow_jid <> ''", wameow.Provider).
+			Select("id, whatsmeow_jid").Rows()
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var id uuid.UUID
+				var jidStr string
+				if err := rows.Scan(&id, &jidStr); err != nil {
+					continue
+				}
+				parsedJID, err := wameow.ParseJID(jidStr)
+				if err != nil {
+					continue
+				}
+				refs = append(refs, wameow.AccountRef{ID: id, JID: parsedJID})
+			}
+			if len(refs) > 0 {
+				lo.Info("whatsmeow: warming up paired sessions", "count", len(refs))
+				wmMgr.ReconnectAll(context.Background(), refs)
+			}
+		}
 	}
 
 	// Initialize TTS if configured (requires piper binary + model)

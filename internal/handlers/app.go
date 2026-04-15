@@ -12,6 +12,7 @@ import (
 	"github.com/shridarpatil/whatomate/internal/calling"
 	"github.com/shridarpatil/whatomate/internal/config"
 	"github.com/shridarpatil/whatomate/internal/integrations/crm"
+	wameow "github.com/shridarpatil/whatomate/internal/integrations/whatsmeow"
 	"github.com/shridarpatil/whatomate/internal/queue"
 	"github.com/shridarpatil/whatomate/internal/storage"
 	"github.com/shridarpatil/whatomate/internal/tts"
@@ -45,6 +46,10 @@ type App struct {
 	S3Client *storage.S3Client
 	// CRM is the client for the external Laravel CRM (nil when integrations.crm.enabled = false)
 	CRM *crm.Client
+	// Whatsmeow manages the lifecycle of unofficial WhatsApp Web sessions
+	// (one per WhatsAppAccount with provider="whatsmeow"). Nil when no
+	// such accounts exist or during startup before init.
+	Whatsmeow *wameow.SessionManager
 	// wg tracks background goroutines for graceful shutdown
 	wg sync.WaitGroup
 }
