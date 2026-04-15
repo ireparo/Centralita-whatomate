@@ -565,6 +565,10 @@ export const whatsmeowGroupService = {
     api.put<{ subject: string }>(`/contacts/${contactId}/whatsmeow/group/subject`, {
       subject,
     }),
+  setDescription: (contactId: string, description: string) =>
+    api.put<{ description: string }>(`/contacts/${contactId}/whatsmeow/group/description`, {
+      description,
+    }),
   leave: (contactId: string) =>
     api.post<{ status: string }>(`/contacts/${contactId}/whatsmeow/group/leave`),
 }

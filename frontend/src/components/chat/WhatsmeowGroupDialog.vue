@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Users,
   Loader2,
@@ -73,6 +74,10 @@ const addPhone = ref('')
 const editingSubject = ref(false)
 const subjectInput = ref('')
 
+// Description edit form.
+const editingDescription = ref(false)
+const descriptionInput = ref('')
+
 async function refresh() {
   isLoading.value = true
   error.value = null
@@ -81,6 +86,7 @@ async function refresh() {
     const data = (resp.data as any).data || resp.data
     info.value = data as WhatsmeowGroupInfo
     subjectInput.value = info.value.subject
+    descriptionInput.value = info.value.description || ''
   } catch (e) {
     error.value = getErrorMessage(e, t('whatsmeowGroup.fetchError'))
   } finally {
@@ -155,6 +161,26 @@ async function onRenameSubmit() {
   }
 }
 
+async function onDescriptionSubmit() {
+  if (!info.value) return
+  const next = descriptionInput.value
+  if (next === (info.value.description || '')) {
+    editingDescription.value = false
+    return
+  }
+  isBusy.value = true
+  try {
+    await whatsmeowGroupService.setDescription(props.contactId, next)
+    if (info.value) info.value.description = next
+    editingDescription.value = false
+    toast.success(t('whatsmeowGroup.descriptionOk'))
+  } catch (e) {
+    toast.error(getErrorMessage(e, t('whatsmeowGroup.descriptionFailed')))
+  } finally {
+    isBusy.value = false
+  }
+}
+
 async function onLeave() {
   if (!confirm(t('whatsmeowGroup.leaveConfirm'))) return
   isBusy.value = true
@@ -210,6 +236,36 @@ const participantCount = computed(() => info.value?.participants.length || 0)
           <Button v-if="editingSubject" variant="ghost" size="sm" @click="editingSubject = false">
             {{ $t('common.cancel') }}
           </Button>
+        </div>
+      </div>
+
+      <!-- Description row -->
+      <div class="space-y-1.5">
+        <Label class="text-xs">{{ $t('whatsmeowGroup.description2') }}</Label>
+        <div v-if="!editingDescription" class="flex gap-2 items-start">
+          <p class="flex-1 text-xs text-muted-foreground whitespace-pre-line break-words min-h-[1.75rem]">
+            {{ info?.description || $t('whatsmeowGroup.noDescription') }}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="isLoading || isBusy"
+            @click="editingDescription = true; descriptionInput = info?.description || ''"
+          >
+            <Pencil class="h-4 w-4" />
+          </Button>
+        </div>
+        <div v-else class="flex flex-col gap-2">
+          <Textarea v-model="descriptionInput" :disabled="isBusy" rows="3" class="text-sm" />
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" @click="editingDescription = false">
+              {{ $t('common.cancel') }}
+            </Button>
+            <Button size="sm" :disabled="isBusy" @click="onDescriptionSubmit">
+              <Loader2 v-if="isBusy" class="h-4 w-4 animate-spin" />
+              <span v-else>{{ $t('common.save') }}</span>
+            </Button>
+          </div>
         </div>
       </div>
 

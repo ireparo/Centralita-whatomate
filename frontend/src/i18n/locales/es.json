@@ -1169,10 +1169,32 @@
     "leaveFailed": "No se pudo abandonar el grupo.",
     "partialAccepted": "{accepted} de {total} cambios aplicados. Los demás fueron rechazados por WhatsApp.",
     "fetchError": "No se pudo cargar la información del grupo.",
+    "description2": "Descripción",
+    "noDescription": "Sin descripción",
+    "descriptionOk": "Descripción actualizada.",
+    "descriptionFailed": "No se pudo actualizar la descripción.",
     "roles": {
       "admin": "Admin",
       "superAdmin": "Creador"
     }
+  },
+  "whatsmeowCreateGroup": {
+    "title": "Crear grupo de WhatsApp",
+    "description": "Crea un grupo nuevo y añade participantes desde su teléfono. Solo disponible en cuentas con proveedor WhatsApp Web.",
+    "account": "Cuenta",
+    "accountPlaceholder": "Selecciona una cuenta",
+    "noWhatsmeowAccounts": "No hay cuentas con proveedor WhatsApp Web configuradas.",
+    "subject": "Nombre del grupo",
+    "subjectPlaceholder": "Equipo ventas Barcelona",
+    "participants": "Participantes",
+    "participantsHint": "Formato internacional. Pulsa Enter o el botón para añadir cada número.",
+    "create": "Crear grupo",
+    "accountRequired": "Selecciona una cuenta.",
+    "subjectRequired": "El nombre del grupo es obligatorio.",
+    "participantsRequired": "Añade al menos un participante.",
+    "duplicatePhone": "Ese número ya está en la lista.",
+    "createdOk": "Grupo creado correctamente.",
+    "createFailed": "No se pudo crear el grupo."
   },
   "whatsmeow": {
     "title": "WhatsApp Web (whatsmeow)",

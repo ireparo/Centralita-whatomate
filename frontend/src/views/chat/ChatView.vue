@@ -99,11 +99,22 @@ import { useHeaderMedia } from '@/composables/useHeaderMedia'
 import { CreateContactDialog } from '@/components/shared'
 import HeaderMediaUpload from '@/components/shared/HeaderMediaUpload.vue'
 import WhatsmeowGroupDialog from '@/components/chat/WhatsmeowGroupDialog.vue'
+import WhatsmeowCreateGroupDialog from '@/components/chat/WhatsmeowCreateGroupDialog.vue'
 import { Info, Users } from 'lucide-vue-next'
 
 // Phase W.5 — group management dialog is opened from the "Group"
 // badge click in the chat header when the current contact is a group.
 const groupDialogOpen = ref(false)
+
+// Phase W.6 — create-group dialog is opened from the sidebar "Users"
+// icon. Emits the new contact id on success so we can jump to it.
+const createGroupDialogOpen = ref(false)
+function onGroupCreated(contactId: string) {
+  // Force-refresh the contacts list so the new group shows up in the
+  // sidebar without a manual reload.
+  void contactsStore.fetchContacts?.()
+  void contactId
+}
 
 const { t } = useI18n()
 const route = useRoute()
@@ -1467,6 +1478,22 @@ async function sendMediaMessage() {
             </TooltipTrigger>
             <TooltipContent>{{ $t('chat.addContact') }}</TooltipContent>
           </Tooltip>
+          <!-- New WhatsApp group (whatsmeow only). Shown alongside
+               Add-contact for org admins — non-whatsmeow deployments
+               simply see the disabled empty state inside the dialog. -->
+          <Tooltip v-if="canWriteContacts">
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8 shrink-0 text-white/40 hover:text-white hover:bg-white/[0.08] light:text-gray-500 light:hover:text-gray-900 light:hover:bg-gray-100"
+                @click="createGroupDialogOpen = true"
+              >
+                <Users class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{{ $t('whatsmeowCreateGroup.title') }}</TooltipContent>
+          </Tooltip>
           <!-- Tag Filter -->
           <Popover v-model:open="isTagFilterOpen">
             <PopoverTrigger as-child>
@@ -2545,6 +2572,13 @@ async function sendMediaMessage() {
       v-model:open="groupDialogOpen"
       @subject-changed="(s: string) => { if (contactsStore.currentContact) contactsStore.currentContact.group_subject = s }"
       @left="() => { groupDialogOpen = false }"
+    />
+
+    <!-- Create group dialog (Phase W.6). Mounted once; always available
+         from the sidebar button regardless of the current contact. -->
+    <WhatsmeowCreateGroupDialog
+      v-model:open="createGroupDialogOpen"
+      @created="onGroupCreated"
     />
   </div>
 </template>
