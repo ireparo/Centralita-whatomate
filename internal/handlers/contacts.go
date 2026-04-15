@@ -1019,10 +1019,38 @@ func (a *App) SendReaction(r *fastglue.Request) error {
 	})
 }
 
-// sendWhatsAppReaction sends a reaction to WhatsApp
+// sendWhatsAppReaction sends a reaction to WhatsApp. Routes by provider:
+// whatsmeow goes through the paired Web session, Cloud API goes through
+// Meta Graph API. Phase W.7.
 func (a *App) sendWhatsAppReaction(account *models.WhatsAppAccount, contact *models.Contact, message *models.Message, emoji string) {
 	if message.WhatsAppMessageID == "" {
 		a.Log.Warn("Cannot send reaction - message has no WhatsApp ID", "message_id", message.ID)
+		return
+	}
+
+	// Phase W.7: whatsmeow-backed accounts use the paired Web session.
+	// The Meta Cloud API does not expose outbound reactions at all, so
+	// whatsmeow is the only provider where this works for agents today.
+	if account.Provider == "whatsmeow" && a.Whatsmeow != nil {
+		client := a.Whatsmeow.Get(account.ID)
+		if client == nil {
+			a.Log.Warn("whatsmeow send reaction skipped: session not connected",
+				"account_id", account.ID, "message_id", message.ID)
+			return
+		}
+		// targetFromMe is whether WE sent the message being reacted to.
+		// WhatsApp silently drops reactions addressed to the wrong side
+		// of the MessageKey, so threading this through correctly matters.
+		targetFromMe := message.Direction == models.DirectionOutgoing
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if _, err := client.SendReaction(ctx, contact.PhoneNumber, message.WhatsAppMessageID, targetFromMe, emoji); err != nil {
+			a.Log.Error("whatsmeow send reaction failed",
+				"error", err, "message_id", message.ID, "emoji", emoji)
+			return
+		}
+		a.Log.Info("Reaction sent via whatsmeow",
+			"message_id", message.WhatsAppMessageID, "emoji", emoji)
 		return
 	}
 

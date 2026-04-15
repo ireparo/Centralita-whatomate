@@ -53,6 +53,7 @@ import (
 	"github.com/google/uuid"
 	"go.mau.fi/whatsmeow"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	waCommon "go.mau.fi/whatsmeow/proto/waCommon"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
@@ -172,6 +173,15 @@ type IncomingMessage struct {
 	IsGroup     bool
 	GroupJID    types.JID
 	GroupPhone  string // "1203.." — the group ID stripped of the @g.us suffix, for Contact.PhoneNumber reuse
+
+	// Reaction fields (Phase W.7).
+	//
+	// When Type == "reaction", ReactionTargetID is the WAMID of the
+	// message being reacted to (from ReactionMessage.Key.ID), and
+	// Content is the emoji (empty string means "remove previous
+	// reaction"). The sink routes these to handleIncomingReaction
+	// instead of the generic saveIncomingMessage path.
+	ReactionTargetID string
 
 	// Raw is the original whatsmeow event. Most callers do not need it;
 	// exposed so the sink can down-cast for features the trimmed view
@@ -577,6 +587,56 @@ func (c *Client) MarkRead(ctx context.Context, messageIDs []string, senderPhone 
 	return c.wm.MarkRead(messageIDs, time.Now(), senderJID, senderJID)
 }
 
+// SendReaction sends a reaction (emoji) to an existing message, or
+// removes the agent's previous reaction if emoji == "". This is the
+// outbound counterpart of the ReactionMessage proto decoded in
+// events.go on the incoming side.
+//
+// WhatsApp treats reactions as regular messages that carry a
+// ReactionMessage sub-proto pointing at the target message via a
+// MessageKey (RemoteJID, FromMe, ID). The recipient client then
+// displays the emoji as a tiny badge on the target bubble.
+//
+//	toPhone           — the chat JID's user part in E.164 no-plus form
+//	                    (or a group ID — resolveRecipientJID decides).
+//	targetMessageID   — the WAMID of the message being reacted to.
+//	targetFromMe      — true when the message being reacted to was sent
+//	                    by us (agent) vs received from the customer.
+//	                    Mis-setting this makes WhatsApp silently drop
+//	                    the reaction, which is why we expose it as a
+//	                    parameter rather than inferring it here.
+//	emoji             — the reaction emoji, or "" to remove the agent's
+//	                    previous reaction on the target.
+//
+// Returns the server-assigned message ID of the reaction message
+// itself (separate WAMID from the target). We do not persist it:
+// the persisted state lives on the target message's Metadata.reactions.
+func (c *Client) SendReaction(ctx context.Context, toPhone, targetMessageID string, targetFromMe bool, emoji string) (string, error) {
+	if c.State() != StateLoggedIn {
+		return "", fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	if targetMessageID == "" {
+		return "", fmt.Errorf("whatsmeow send reaction: empty target message ID")
+	}
+	jid := resolveRecipientJID(toPhone)
+	msg := &waProto.Message{
+		ReactionMessage: &waProto.ReactionMessage{
+			Key: &waCommon.MessageKey{
+				RemoteJID: proto(jid.String()),
+				FromMe:    protoBool(targetFromMe),
+				ID:        proto(targetMessageID),
+			},
+			Text:              proto(emoji),
+			SenderTimestampMS: protoInt64(time.Now().UnixMilli()),
+		},
+	}
+	resp, err := c.wm.SendMessage(ctx, jid, msg)
+	if err != nil {
+		return "", fmt.Errorf("whatsmeow send reaction: %w", err)
+	}
+	return resp.ID, nil
+}
+
 // --- Group management (Phase W.5) ---------------------------------------
 //
 // iReparo exposes a small CRUD-style admin surface for WhatsApp groups:
@@ -794,10 +854,12 @@ func (c *Client) CreateGroup(ctx context.Context, subject string, participantPho
 	return out, nil
 }
 
-// protoUint64 / protoBool mirror `proto` for uint64 / bool fields on the
-// whatsmeow proto. Used by the media send methods.
+// protoUint64 / protoBool / protoInt64 mirror `proto` for uint64 / bool /
+// int64 fields on the whatsmeow proto. Used by the media send methods
+// and by SendReaction (timestamp).
 func protoUint64(v uint64) *uint64 { return &v }
 func protoBool(v bool) *bool       { return &v }
+func protoInt64(v int64) *int64    { return &v }
 
 // --- Internal event handling ---------------------------------------------
 

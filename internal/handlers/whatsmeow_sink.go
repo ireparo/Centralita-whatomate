@@ -39,6 +39,20 @@ func (a *App) OnIncomingMessage(ctx context.Context, accountID uuid.UUID, evt *w
 		return
 	}
 
+	// Phase W.7: reactions are not real messages — they mutate the
+	// Metadata.reactions array on the TARGET message instead of creating
+	// a new row. Reuse the exact same handler the Cloud API webhook
+	// uses so both provider paths converge on identical state.
+	if evt.Type == "reaction" {
+		if evt.ReactionTargetID == "" {
+			a.Log.Warn("whatsmeow: reaction without target message ID",
+				"account_id", accountID, "from", evt.FromPhone)
+			return
+		}
+		a.handleIncomingReaction(&account, evt.FromPhone, evt.ReactionTargetID, evt.Content, evt.PushName)
+		return
+	}
+
 	// Phase W.4: group messages land on a group Contact (keyed by the
 	// group JID) with SenderPhone / SenderName populated from the
 	// participant so the UI can render "Alice: Hola!".

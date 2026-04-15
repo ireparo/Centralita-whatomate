@@ -80,8 +80,17 @@ func extractIncomingFields(evt *events.Message) *IncomingMessage {
 		out.MediaMime = sm.GetMimetype()
 
 	case msg.GetReactionMessage() != nil:
+		// Phase W.7 — a reaction carries the target message ID in
+		// ReactionMessage.Key.ID plus the emoji (or empty string for
+		// "remove reaction") in ReactionMessage.Text. We thread both
+		// through to the sink so handleIncomingReaction can find the
+		// message and upsert the reactions array on its Metadata.
+		rm := msg.GetReactionMessage()
 		out.Type = "reaction"
-		out.Content = msg.GetReactionMessage().GetText()
+		out.Content = rm.GetText()
+		if key := rm.GetKey(); key != nil {
+			out.ReactionTargetID = key.GetID()
+		}
 
 	case msg.GetButtonsResponseMessage() != nil:
 		out.Type = "interactive"
