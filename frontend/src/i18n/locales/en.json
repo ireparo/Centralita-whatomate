@@ -1442,6 +1442,11 @@
     }
   },
   "accounts": {
+    "providerLabel": "Provider",
+    "providerCloudAPI": "Meta Cloud API (official)",
+    "providerWhatsmeow": "WhatsApp Web (whatsmeow, unofficial)",
+    "providerWhatsmeowWarning": "Unofficial protocol — violates WhatsApp ToS. The number can be banned at any time by Meta.",
+    "whatsmeowNextStep": "Save this account, then scan the QR code from the card below to pair a WhatsApp number. No Meta credentials needed.",
     "title": "WhatsApp Accounts",
     "addAccount": "Add Account",
     "editAccount": "Edit WhatsApp Account",

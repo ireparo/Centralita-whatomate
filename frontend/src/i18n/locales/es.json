@@ -1441,6 +1441,11 @@
   },
   "accounts": {
     "title": "Cuentas de WhatsApp",
+    "providerLabel": "Proveedor",
+    "providerCloudAPI": "Meta Cloud API (oficial)",
+    "providerWhatsmeow": "WhatsApp Web (whatsmeow, no oficial)",
+    "providerWhatsmeowWarning": "Protocolo no oficial — viola los términos de WhatsApp. Meta puede banear el número en cualquier momento.",
+    "whatsmeowNextStep": "Guarda esta cuenta y luego escanea el QR de la tarjeta inferior para emparejar un número de WhatsApp. No se necesitan credenciales de Meta.",
     "addAccount": "Agregar cuenta",
     "editAccount": "Editar cuenta de WhatsApp",
     "createAccount": "Agregar cuenta de WhatsApp",

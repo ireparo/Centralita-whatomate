@@ -109,6 +109,11 @@ const canDelete = computed(() => authStore.hasPermission('accounts', 'delete'))
 
 const form = ref({
   name: '',
+  // Provider — selected at creation time; immutable after that because
+  // switching would invalidate the credentials on disk.
+  //   "cloud_api" — official Meta Cloud API (default).
+  //   "whatsmeow" — reverse-engineered WhatsApp Web protocol.
+  provider: 'cloud_api',
   app_id: '',
   phone_id: '',
   business_id: '',
@@ -120,6 +125,11 @@ const form = ref({
   is_default_outgoing: false,
   auto_read_receipt: false,
 })
+
+// Cloud-API-specific fields are hidden / made optional when the admin
+// picks the whatsmeow provider. Centralised flag so the template
+// v-if / :required attrs stay legible.
+const isWhatsmeow = computed(() => form.value.provider === 'whatsmeow')
 
 const breadcrumbs = computed(() => [
   { label: t('nav.settings'), href: '/settings' },
@@ -153,6 +163,7 @@ function syncForm() {
   if (!account.value) return
   form.value = {
     name: account.value.name,
+    provider: account.value.provider || 'cloud_api',
     app_id: account.value.app_id || '',
     phone_id: account.value.phone_id,
     business_id: account.value.business_id,
@@ -167,13 +178,22 @@ function syncForm() {
 }
 
 async function save() {
-  if (!form.value.name.trim() || !form.value.phone_id.trim() || !form.value.business_id.trim()) {
-    toast.error(t('accounts.fillRequired', 'Name, Phone ID, and Business ID are required'))
+  if (!form.value.name.trim()) {
+    toast.error(t('accounts.fillRequired', 'Name is required'))
     return
   }
-  if (isNew.value && !form.value.access_token.trim()) {
-    toast.error(t('accounts.accessTokenRequired', 'Access token is required'))
-    return
+  // Cloud-API-specific validation: Meta identifiers + access token are
+  // mandatory on creation. Whatsmeow accounts skip these; pairing
+  // happens after save via the QR modal on the detail view.
+  if (form.value.provider === 'cloud_api') {
+    if (!form.value.phone_id.trim() || !form.value.business_id.trim()) {
+      toast.error(t('accounts.fillRequired', 'Phone ID and Business ID are required'))
+      return
+    }
+    if (isNew.value && !form.value.access_token.trim()) {
+      toast.error(t('accounts.accessTokenRequired', 'Access token is required'))
+      return
+    }
   }
 
   isSaving.value = true
@@ -344,9 +364,31 @@ onMounted(async () => {
           <Input v-model="form.name" :disabled="!canWrite" />
         </div>
 
+        <!-- Provider selector (only on create — immutable after that
+             because the other fields depend on it). -->
+        <div class="space-y-1.5">
+          <Label class="text-xs">{{ $t('accounts.providerLabel', 'Provider') }} *</Label>
+          <select
+            v-model="form.provider"
+            :disabled="!canWrite || !isNew"
+            class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm disabled:opacity-50"
+          >
+            <option value="cloud_api">{{ $t('accounts.providerCloudAPI', 'Meta Cloud API (official)') }}</option>
+            <option value="whatsmeow">{{ $t('accounts.providerWhatsmeow', 'WhatsApp Web (whatsmeow, unofficial)') }}</option>
+          </select>
+          <p v-if="isWhatsmeow" class="text-[11px] text-destructive flex items-start gap-1 mt-1">
+            <AlertCircle class="h-3 w-3 flex-shrink-0 mt-0.5" />
+            <span>{{ $t('accounts.providerWhatsmeowWarning', 'Unofficial protocol — violates WhatsApp ToS. The number can be banned at any time by Meta.') }}</span>
+          </p>
+        </div>
+
         <Separator />
 
-        <div class="grid grid-cols-2 gap-4">
+        <!-- Meta Cloud API specific fields. Hidden for whatsmeow
+             accounts since they have no Meta identifiers. Pairing for
+             whatsmeow happens post-save via the WhatsmeowPairingCard
+             rendered below. -->
+        <div v-if="!isWhatsmeow" class="grid grid-cols-2 gap-4">
           <div class="space-y-1.5">
             <Label class="text-xs">{{ $t('accounts.metaAppId', 'Meta App ID') }}</Label>
             <Input v-model="form.app_id" :disabled="!canWrite" />
@@ -365,9 +407,15 @@ onMounted(async () => {
           </div>
         </div>
 
-        <Separator />
+        <!-- Whatsmeow accounts only need a name; pairing credentials
+             live in the whatsmeow_* tables managed by the library. -->
+        <div v-else class="text-sm text-muted-foreground bg-muted/40 rounded-md p-3 border border-muted">
+          {{ $t('accounts.whatsmeowNextStep', 'Save this account, then scan the QR code from the card below to pair a WhatsApp number. No Meta credentials needed.') }}
+        </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <Separator v-if="!isWhatsmeow" />
+
+        <div v-if="!isWhatsmeow" class="grid grid-cols-2 gap-4">
           <div class="space-y-1.5">
             <Label class="text-xs">
               {{ $t('accounts.accessToken', 'Access Token') }}
@@ -410,8 +458,10 @@ onMounted(async () => {
       </CardContent>
     </Card>
 
-    <!-- Webhook Config Card -->
-    <Card v-if="!isNew">
+    <!-- Webhook Config Card — only relevant for Cloud API accounts.
+         Whatsmeow uses QR pairing and has no webhook URL to configure
+         on Meta's side. -->
+    <Card v-if="!isNew && !isWhatsmeow">
       <CardHeader class="pb-3">
         <CardTitle class="text-sm font-medium">{{ $t('accounts.webhookConfig', 'Webhook Configuration') }}</CardTitle>
       </CardHeader>
