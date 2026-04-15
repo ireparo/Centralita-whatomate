@@ -39,12 +39,27 @@ func (a *App) OnIncomingMessage(ctx context.Context, accountID uuid.UUID, evt *w
 		return
 	}
 
-	// Resolve (or create) the contact. The existing helper handles
-	// both cases, including masking + avatar defaults.
-	contact, err := a.resolveOrCreateContact(&account, evt.FromPhone, evt.PushName)
-	if err != nil {
-		a.Log.Error("whatsmeow: resolve contact failed", "phone", evt.FromPhone, "error", err)
-		return
+	// Phase W.4: group messages land on a group Contact (keyed by the
+	// group JID) with SenderPhone / SenderName populated from the
+	// participant so the UI can render "Alice: Hola!".
+	//
+	// For 1:1 messages this stays exactly as before — the chat contact
+	// is the person who sent the message.
+	var contact *models.Contact
+	var senderName string
+	if evt.IsGroup {
+		contact, err = a.resolveOrCreateGroupContact(&account, evt.GroupPhone, evt.GroupJID.String(), evt.PushName)
+		if err != nil {
+			a.Log.Error("whatsmeow: resolve group contact failed", "group", evt.GroupPhone, "error", err)
+			return
+		}
+		senderName = evt.PushName
+	} else {
+		contact, err = a.resolveOrCreateContact(&account, evt.FromPhone, evt.PushName)
+		if err != nil {
+			a.Log.Error("whatsmeow: resolve contact failed", "phone", evt.FromPhone, "error", err)
+			return
+		}
 	}
 
 	// Reuse the exact same persistence path the Cloud API webhook uses.
@@ -78,6 +93,55 @@ func (a *App) OnIncomingMessage(ctx context.Context, accountID uuid.UUID, evt *w
 		}
 	}
 	a.saveIncomingMessage(&account, contact, evt.MessageID, evt.Type, evt.Content, mediaInfo, "")
+
+	// For group messages, back-fill SenderPhone + SenderName on the row
+	// that saveIncomingMessage just created. Doing it as a follow-up
+	// UPDATE keeps the existing helper shape untouched (it is shared
+	// with the Cloud API path, which never has groups).
+	if evt.IsGroup {
+		_ = a.DB.Model(&models.Message{}).
+			Where("organization_id = ? AND whats_app_message_id = ?", account.OrganizationID, evt.MessageID).
+			Updates(map[string]any{
+				"sender_phone": evt.FromPhone,
+				"sender_name":  senderName,
+			}).Error
+	}
+}
+
+// resolveOrCreateGroupContact upserts the Contact row that represents a
+// WhatsApp group. We key on (org_id, is_group, group_jid) so that group
+// renames do not create duplicates.
+func (a *App) resolveOrCreateGroupContact(account *models.WhatsAppAccount, groupPhone, groupJID, pushName string) (*models.Contact, error) {
+	var contact models.Contact
+	err := a.DB.
+		Where("organization_id = ? AND is_group = ? AND group_jid = ?", account.OrganizationID, true, groupJID).
+		First(&contact).Error
+	if err == nil {
+		return &contact, nil
+	}
+	// Fresh group row. We reuse PhoneNumber for the group ID so the rest
+	// of the messaging pipeline (which keys on phone_number) works
+	// without changes. Group name starts as the push name of the first
+	// sender we see — a Phase W.5 enhancement would call GetGroupInfo
+	// on pairing to fetch the real subject, but that requires an extra
+	// whatsmeow call that can be slow.
+	subject := pushName
+	if subject == "" {
+		subject = "Group " + groupPhone
+	}
+	contact = models.Contact{
+		BaseModel:      models.BaseModel{ID: uuid.New()},
+		OrganizationID: account.OrganizationID,
+		PhoneNumber:    groupPhone,
+		ProfileName:    subject,
+		IsGroup:        true,
+		GroupJID:       groupJID,
+		GroupSubject:   subject,
+	}
+	if err := a.DB.Create(&contact).Error; err != nil {
+		return nil, err
+	}
+	return &contact, nil
 }
 
 // OnStateChange is fired on every session lifecycle transition. For now

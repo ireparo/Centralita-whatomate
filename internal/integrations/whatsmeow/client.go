@@ -46,6 +46,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -132,9 +133,11 @@ type IncomingMessage struct {
 	MessageID string
 
 	// FromJID is the sender's JID (e.g. "34666123456@s.whatsapp.net").
+	// For group messages this is the participant JID, NOT the group JID.
 	FromJID types.JID
 
 	// FromPhone is the sender's phone number in E.164 without "+".
+	// For group messages this is the participant's phone, not the group.
 	FromPhone string
 
 	// Type is one of "text", "image", "audio", "video", "document",
@@ -152,12 +155,23 @@ type IncomingMessage struct {
 	MediaMime string
 
 	// PushName is the display name the sender currently advertises. Used
-	// to initialise Contact.ProfileName for new contacts.
+	// to initialise Contact.ProfileName for new contacts (or SenderName
+	// on group messages).
 	PushName string
 
 	// Timestamp is when WhatsApp server received the message (not when
 	// we got it).
 	Timestamp time.Time
+
+	// Group fields (Phase W.4).
+	//
+	// When IsGroup is true, the chat this message belongs to is the
+	// group identified by GroupJID. The message itself came from
+	// FromJID / FromPhone (the participant). The sink stores the message
+	// on the GROUP Contact with SenderPhone / SenderName populated.
+	IsGroup     bool
+	GroupJID    types.JID
+	GroupPhone  string // "1203.." — the group ID stripped of the @g.us suffix, for Contact.PhoneNumber reuse
 
 	// Raw is the original whatsmeow event. Most callers do not need it;
 	// exposed so the sink can down-cast for features the trimmed view
@@ -322,16 +336,41 @@ func (c *Client) Logout(ctx context.Context) error {
 	return nil
 }
 
+// resolveRecipientJID builds a JID from a recipient string. Accepts
+// either:
+//
+//	- Plain E.164 no-plus ("34666112233") → individual s.whatsapp.net JID
+//	- Bare group ID ("120363111112222333") → group @g.us JID
+//	- Full JID string ("...@s.whatsapp.net" / "...@g.us") → parsed as-is
+//
+// Distinguishing bare groups from individuals: WhatsApp group IDs are
+// always longer than any legal phone number (E.164 maxes out at 15
+// digits; group IDs are 18+ digits). We use length > 15 as the heuristic
+// so the dispatcher does not need a separate IsGroup flag at call
+// sites.
+func resolveRecipientJID(recipient string) types.JID {
+	// Already a full JID?
+	if strings.Contains(recipient, "@") {
+		if jid, err := types.ParseJID(recipient); err == nil {
+			return jid
+		}
+	}
+	if len(recipient) > 15 {
+		return types.NewJID(recipient, types.GroupServer)
+	}
+	return types.NewJID(recipient, types.DefaultUserServer)
+}
+
 // SendTextMessage dispatches a text WhatsApp message. Returns the
 // server-assigned message ID.
 //
-// toPhone must be E.164 without "+", matching the format used in the
-// Contact model.
-func (c *Client) SendTextMessage(ctx context.Context, toPhone, body string) (string, error) {
+// recipient can be an E.164 phone (1:1 chat) OR a WhatsApp group ID
+// (for group chats). See resolveRecipientJID for detection rules.
+func (c *Client) SendTextMessage(ctx context.Context, recipient, body string) (string, error) {
 	if c.State() != StateLoggedIn {
 		return "", fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
 	}
-	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	jid := resolveRecipientJID(recipient)
 	msg := &waProto.Message{
 		Conversation: proto(body),
 	}
@@ -365,7 +404,7 @@ func (c *Client) SendImageMessage(ctx context.Context, toPhone string, media Med
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow upload image: %w", err)
 	}
-	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	jid := resolveRecipientJID(toPhone)
 	msg := &waProto.Message{
 		ImageMessage: &waProto.ImageMessage{
 			URL:           proto(up.URL),
@@ -394,7 +433,7 @@ func (c *Client) SendVideoMessage(ctx context.Context, toPhone string, media Med
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow upload video: %w", err)
 	}
-	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	jid := resolveRecipientJID(toPhone)
 	msg := &waProto.Message{
 		VideoMessage: &waProto.VideoMessage{
 			URL:           proto(up.URL),
@@ -426,7 +465,7 @@ func (c *Client) SendAudioMessage(ctx context.Context, toPhone string, media Med
 		return "", fmt.Errorf("whatsmeow upload audio: %w", err)
 	}
 	isPTT := len(media.Mime) >= 9 && media.Mime[:9] == "audio/ogg"
-	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	jid := resolveRecipientJID(toPhone)
 	msg := &waProto.Message{
 		AudioMessage: &waProto.AudioMessage{
 			URL:           proto(up.URL),
@@ -456,7 +495,7 @@ func (c *Client) SendDocumentMessage(ctx context.Context, toPhone string, media 
 	if err != nil {
 		return "", fmt.Errorf("whatsmeow upload document: %w", err)
 	}
-	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	jid := resolveRecipientJID(toPhone)
 	msg := &waProto.Message{
 		DocumentMessage: &waProto.DocumentMessage{
 			URL:           proto(up.URL),
@@ -503,7 +542,7 @@ func (c *Client) SendTypingIndicator(ctx context.Context, toPhone string, isTypi
 	if c.State() != StateLoggedIn {
 		return fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
 	}
-	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	jid := resolveRecipientJID(toPhone)
 	presence := types.ChatPresenceComposing
 	if !isTyping {
 		presence = types.ChatPresencePaused

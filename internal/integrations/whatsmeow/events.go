@@ -28,6 +28,15 @@ func extractIncomingFields(evt *events.Message) *IncomingMessage {
 		Raw:       evt,
 	}
 
+	// Group detection — whatsmeow sets Info.Chat to the group JID
+	// (*@g.us) while Info.Sender is the participant. If the chat and
+	// sender differ and the chat ends in @g.us, it's a group message.
+	if info.Chat.Server == types.GroupServer {
+		out.IsGroup = true
+		out.GroupJID = info.Chat
+		out.GroupPhone = info.Chat.User // the group ID portion
+	}
+
 	switch {
 	case msg.GetConversation() != "":
 		out.Type = "text"

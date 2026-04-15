@@ -390,6 +390,23 @@ type Contact struct {
 	// matching record in the CRM (unknown callers, prospects, spam, etc.).
 	ExternalCRMID *int64 `gorm:"column:external_crm_id;index" json:"external_crm_id,omitempty"`
 
+	// WhatsApp group fields (Phase W.4, whatsmeow only).
+	//
+	// When IsGroup is true this Contact row represents a WhatsApp group
+	// rather than a single person. The "phone_number" column is repurposed
+	// to store the group JID (without the @g.us suffix) because the chat
+	// pipeline keys off phone_number everywhere — reusing it avoids a
+	// full pass through the codebase. GroupJID mirrors that value with the
+	// full JID including the suffix, for whatsmeow calls that need it raw.
+	//
+	// Group messages always land on the group Contact, with Message.SenderPhone
+	// / SenderName identifying the participant who actually sent them.
+	// Cloud API accounts cannot produce groups (Meta does not expose them
+	// via the Business API), so these fields are always zero for those.
+	IsGroup      bool   `gorm:"default:false;index" json:"is_group"`
+	GroupJID     string `gorm:"size:100;index" json:"group_jid,omitempty"`
+	GroupSubject string `gorm:"size:255" json:"group_subject,omitempty"`
+
 	// Chatbot SLA tracking
 	ChatbotLastMessageAt *time.Time `json:"chatbot_last_message_at,omitempty"` // When chatbot last sent a message
 	ChatbotReminderSent  bool       `gorm:"default:false" json:"chatbot_reminder_sent"`
@@ -425,6 +442,15 @@ type Message struct {
 	Status            MessageStatus `gorm:"size:20;default:'pending'" json:"status"`
 	ErrorMessage      string     `gorm:"type:text" json:"error_message"`
 	IsReply           bool       `gorm:"default:false" json:"is_reply"`
+
+	// Group participant attribution (Phase W.4, whatsmeow only).
+	//
+	// For messages in WhatsApp groups we keep SenderPhone + SenderName
+	// alongside the message itself so the agent panel can render "Alice:
+	// Hola!" style prefixes without joining to a separate participants
+	// table on every query. Zero for 1:1 conversations.
+	SenderPhone string `gorm:"size:50;index" json:"sender_phone,omitempty"`
+	SenderName  string `gorm:"size:255" json:"sender_name,omitempty"`
 	ReplyToMessageID  *uuid.UUID `gorm:"type:uuid" json:"reply_to_message_id,omitempty"`
 	SentByUserID      *uuid.UUID `gorm:"type:uuid;index" json:"sent_by_user_id,omitempty"` // User who sent outgoing message
 	Metadata          JSONB      `gorm:"type:jsonb;default:'{}'" json:"metadata"`
