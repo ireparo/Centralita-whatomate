@@ -1167,4 +1167,94 @@ export const crmQueueService = {
   delete: (id: string) => api.delete(`/admin/crm-queue/${id}`),
 }
 
+// Telnyx PSTN settings (Phase 2.4 UI)
+//
+// A connection (one per org) holds the Telnyx API credentials. Numbers are
+// individual DDIs under that connection, each optionally wired to an IVR
+// flow that handles inbound calls.
+
+export interface TelnyxConnection {
+  id: string
+  label: string
+  call_control_app_id: string
+  outbound_profile_id: string
+  status: 'active' | 'suspended' | 'error'
+  has_api_key: boolean
+  has_public_key: boolean
+  last_verified_at?: string
+  created_at: string
+  updated_at: string
+  numbers_count: number
+}
+
+export interface TelnyxNumber {
+  id: string
+  connection_id: string
+  phone_number: string
+  label: string
+  country: string
+  number_type: string
+  telnyx_number_id: string
+  ivr_flow_id?: string | null
+  ivr_flow_name?: string
+  is_active: boolean
+  recording_enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export const telnyxConnectionsService = {
+  get: () => api.get<TelnyxConnection>('/telnyx/connection'),
+  create: (data: {
+    label: string
+    api_key: string
+    public_key?: string
+    call_control_app_id: string
+    outbound_profile_id?: string
+  }) => api.post<TelnyxConnection>('/telnyx/connections', data),
+  update: (
+    id: string,
+    data: {
+      label?: string
+      api_key?: string
+      public_key?: string
+      call_control_app_id?: string
+      outbound_profile_id?: string
+    }
+  ) => api.put<TelnyxConnection>(`/telnyx/connections/${id}`, data),
+  delete: (id: string) => api.delete(`/telnyx/connections/${id}`),
+  test: (data?: { api_key?: string }) =>
+    api.post<{ ok: boolean; error?: string }>('/telnyx/connections/test', data || {}),
+}
+
+export const telnyxNumbersService = {
+  list: (params?: { connection_id?: string }) =>
+    api.get<{ numbers: TelnyxNumber[]; total: number }>('/telnyx/numbers', { params }),
+  create: (data: {
+    connection_id: string
+    phone_number: string
+    label?: string
+    country?: string
+    number_type?: string
+    telnyx_number_id?: string
+    ivr_flow_id?: string | null
+    is_active?: boolean
+    recording_enabled?: boolean
+  }) => api.post<TelnyxNumber>('/telnyx/numbers', data),
+  update: (
+    id: string,
+    data: Partial<{
+      phone_number: string
+      label: string
+      country: string
+      number_type: string
+      telnyx_number_id: string
+      ivr_flow_id: string | null
+      is_active: boolean
+      recording_enabled: boolean
+    }>
+  ) => api.put<TelnyxNumber>(`/telnyx/numbers/${id}`, data),
+  delete: (id: string) => api.delete(`/telnyx/numbers/${id}`),
+}
+
 export default api

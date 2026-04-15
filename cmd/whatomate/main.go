@@ -755,6 +755,18 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.POST("/api/admin/crm-queue/{id}/replay", app.ReplayCRMEventQueue)
 	g.DELETE("/api/admin/crm-queue/{id}", app.DeleteCRMEventQueue)
 
+	// Telnyx PSTN — connection + numbers admin (Phase 2.4 UI)
+	g.GET("/api/telnyx/connection", app.GetTelnyxConnection)
+	g.POST("/api/telnyx/connections", app.CreateTelnyxConnection)
+	g.PUT("/api/telnyx/connections/{id}", app.UpdateTelnyxConnection)
+	g.DELETE("/api/telnyx/connections/{id}", app.DeleteTelnyxConnection)
+	g.POST("/api/telnyx/connections/test", app.TestTelnyxConnection)
+
+	g.GET("/api/telnyx/numbers", app.ListTelnyxNumbers)
+	g.POST("/api/telnyx/numbers", app.CreateTelnyxNumber)
+	g.PUT("/api/telnyx/numbers/{id}", app.UpdateTelnyxNumber)
+	g.DELETE("/api/telnyx/numbers/{id}", app.DeleteTelnyxNumber)
+
 	// Canned Responses
 	g.GET("/api/canned-responses", app.ListCannedResponses)
 	g.POST("/api/canned-responses", app.CreateCannedResponse)

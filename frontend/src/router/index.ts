@@ -273,6 +273,12 @@ const router = createRouter({
           meta: { permission: 'settings.general' }
         },
         {
+          path: 'settings/telnyx',
+          name: 'telnyx-settings',
+          component: () => import('@/views/settings/TelnyxView.vue'),
+          meta: { permission: 'settings.general' }
+        },
+        {
           path: 'calling',
           redirect: '/calling/logs'
         },
