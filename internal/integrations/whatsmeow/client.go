@@ -106,6 +106,21 @@ type EventSink interface {
 	// app) tears the session down. Sink typically clears
 	// WhatsmeowJID on the account row and flags the account inactive.
 	OnLoggedOut(ctx context.Context, accountID uuid.UUID)
+
+	// OnReadReceipt fires when the remote end (the customer) has seen
+	// one or more messages we sent. The sink updates Message.Status on
+	// those rows to "read" and broadcasts a status_update over WebSocket
+	// so the agent panel renders the blue double tick.
+	//
+	//	deliveryType — "delivered" (single grey tick) or "read" (double
+	//	              blue). whatsmeow reports both; the sink decides
+	//	              which DB states map.
+	OnReadReceipt(ctx context.Context, accountID uuid.UUID, fromPhone string, messageIDs []string, deliveryType string)
+
+	// OnChatPresence fires when the remote end starts or stops typing.
+	// The sink broadcasts a WebSocket `typing_indicator` payload to the
+	// agent panel so the three-dot bubble renders in real time.
+	OnChatPresence(accountID uuid.UUID, fromPhone string, isTyping bool)
 }
 
 // IncomingMessage is the trimmed view of a whatsmeow *events.Message we
@@ -478,6 +493,51 @@ func (c *Client) DownloadMedia(ctx context.Context, msg *waProto.Message) ([]byt
 	return c.wm.DownloadAny(ctx, msg)
 }
 
+// SendTypingIndicator tells WhatsApp "this agent is currently typing"
+// (or has stopped). The other end renders the classic three-dot bubble.
+//
+// toPhone is the recipient in E.164 no-plus form. isTyping=false sends
+// a "paused" presence which hides the dots immediately; if the typing
+// state is never explicitly paused, WhatsApp auto-clears it after ~10s.
+func (c *Client) SendTypingIndicator(ctx context.Context, toPhone string, isTyping bool) error {
+	if c.State() != StateLoggedIn {
+		return fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	jid := types.NewJID(toPhone, types.DefaultUserServer)
+	presence := types.ChatPresenceComposing
+	if !isTyping {
+		presence = types.ChatPresencePaused
+	}
+	// The third arg is the media type being typed (empty = text). The
+	// library also accepts "audio" for recording-voice-note indicators,
+	// but we do not surface that yet.
+	return c.wm.SendChatPresence(jid, presence, types.ChatPresenceMediaText)
+}
+
+// MarkRead sends the "read" receipt for one or more incoming messages
+// to the sender — the double blue ticks in WhatsApp. Call this from the
+// Cloud API auto-read path or from the equivalent whatsmeow flow.
+//
+//	messageIDs — the server IDs of the messages being marked. Pass the
+//	             Messages the agent has now seen in the panel.
+//	senderPhone — the JID's user part in E.164 no-plus form.
+//
+// No-ops (returns nil) when the list is empty.
+func (c *Client) MarkRead(ctx context.Context, messageIDs []string, senderPhone string) error {
+	if c.State() != StateLoggedIn {
+		return fmt.Errorf("whatsmeow: session not logged in (state=%s)", c.State())
+	}
+	if len(messageIDs) == 0 {
+		return nil
+	}
+	senderJID := types.NewJID(senderPhone, types.DefaultUserServer)
+	// whatsmeow's MarkRead takes a MessageIDs slice, a timestamp (when the
+	// agent actually saw the message — time.Now is fine for immediate
+	// marking), the chat JID, and the sender JID (same as chat for 1:1
+	// conversations; differs in groups which W.1 does not cover).
+	return c.wm.MarkRead(messageIDs, time.Now(), senderJID, senderJID)
+}
+
 // protoUint64 / protoBool mirror `proto` for uint64 / bool fields on the
 // whatsmeow proto. Used by the media send methods.
 func protoUint64(v uint64) *uint64 { return &v }
@@ -526,7 +586,55 @@ func (c *Client) handleEvent(rawEvt interface{}) {
 		// Transient — library retries automatically.
 	case *events.Message:
 		c.handleIncomingMessage(ctx, evt)
+	case *events.Receipt:
+		c.handleReceipt(ctx, evt)
+	case *events.ChatPresence:
+		c.handleChatPresence(evt)
 	}
+}
+
+// handleReceipt bridges a whatsmeow Receipt event (delivery + read)
+// into the sink. whatsmeow batches receipts: one event can report
+// multiple message IDs, all from the same sender.
+func (c *Client) handleReceipt(ctx context.Context, evt *events.Receipt) {
+	if c.sink == nil || evt == nil || len(evt.MessageIDs) == 0 {
+		return
+	}
+	// Whatsmeow's Receipt has a Type (ReceiptTypeDelivered /
+	// ReceiptTypeRead / ReceiptTypeReadSelf). We only care about the
+	// first two for agent-panel updates.
+	dt := ""
+	switch evt.Type {
+	case types.ReceiptTypeDelivered:
+		dt = "delivered"
+	case types.ReceiptTypeRead, types.ReceiptTypeReadSelf:
+		dt = "read"
+	default:
+		return
+	}
+	// evt.MessageSource embeds Sender (types.JID) — use the user part.
+	c.sink.OnReadReceipt(ctx, c.accountID, jidToPhone(evt.Sender), asStrings(evt.MessageIDs), dt)
+}
+
+// handleChatPresence routes typing start/stop events from the remote
+// end to the sink.
+func (c *Client) handleChatPresence(evt *events.ChatPresence) {
+	if c.sink == nil || evt == nil {
+		return
+	}
+	isTyping := evt.State == types.ChatPresenceComposing
+	c.sink.OnChatPresence(c.accountID, jidToPhone(evt.Sender), isTyping)
+}
+
+// asStrings converts a slice of types.MessageID (an alias for string
+// in most whatsmeow versions) into []string. Kept as a helper so the
+// conversion stays in one place should whatsmeow change the type.
+func asStrings(ids []types.MessageID) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	return out
 }
 
 // handleIncomingMessage decodes a whatsmeow Message event into the

@@ -18,6 +18,13 @@ const (
 	TypePing          = "ping"
 	TypePong          = "pong"
 
+	// TypeTypingIndicator is broadcast when the whatsmeow provider
+	// detects the remote end is composing / stopped. Payload:
+	//   { contact_id, account_id, is_typing: bool }
+	// Cloud API does not emit these — Meta's webhook has no typing
+	// field — so this only fires for whatsmeow-provider accounts.
+	TypeTypingIndicator = "typing_indicator"
+
 	// Agent transfer types
 	TypeAgentTransfer        = "agent_transfer"
 	TypeAgentTransferResume  = "agent_transfer_resume"

@@ -686,6 +686,8 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.POST("/api/accounts/{id}/whatsmeow/logout", app.LogoutWhatsmeow)
 	g.GET("/api/accounts/{id}/whatsmeow/status", app.WhatsmeowStatus)
 	g.GET("/ws/whatsmeow/{id}", app.WhatsmeowQRWebSocket)
+	// Typing indicator (Phase W.3) — provider-aware no-op for Cloud API.
+	g.POST("/api/contacts/{id}/whatsmeow/typing", app.SendWhatsmeowTyping)
 	g.GET("/api/accounts/{id}/business_profile", app.GetBusinessProfile)
 	g.PUT("/api/accounts/{id}/business_profile", app.UpdateBusinessProfile)
 	g.POST("/api/accounts/{id}/business_profile/photo", app.UpdateProfilePicture)

@@ -233,6 +233,71 @@ func (a *App) loadWhatsmeowAccount(r *fastglue.Request, orgID uuid.UUID) (uuid.U
 	return accountID, nil
 }
 
+// --- Typing indicator (Phase W.3) ---------------------------------------
+
+// SendWhatsmeowTyping is POST /api/contacts/{id}/whatsmeow/typing.
+//
+// Body: { "is_typing": true|false }
+//
+// Invoked by the agent panel when the compose box focus / text changes.
+// Fire-and-forget — 200 OK even if the send to WhatsApp fails, because
+// typing is advisory UX; losing one event is better than the agent
+// seeing HTTP errors in their console.
+//
+// Whatsmeow-only. For Cloud API accounts we return 200 with no-op — the
+// Cloud API has no outgoing typing primitive and treating this endpoint
+// as provider-aware lets the frontend call it unconditionally.
+func (a *App) SendWhatsmeowTyping(r *fastglue.Request) error {
+	orgID, userID, err := a.getOrgAndUserID(r)
+	if err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+	}
+	if !a.HasPermission(userID, models.ResourceChat, models.ActionWrite, orgID) {
+		return r.SendErrorEnvelope(fasthttp.StatusForbidden, "You do not have permission", nil, "")
+	}
+
+	idStr, _ := r.RequestCtx.UserValue("id").(string)
+	contactID, err := uuid.Parse(idStr)
+	if err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid contact id", nil, "")
+	}
+
+	var body struct {
+		IsTyping bool `json:"is_typing"`
+	}
+	_ = json.Unmarshal(r.RequestCtx.PostBody(), &body)
+
+	var contact models.Contact
+	if err := a.DB.Where("id = ? AND organization_id = ?", contactID, orgID).First(&contact).Error; err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusNotFound, "Contact not found", nil, "")
+	}
+	if contact.WhatsAppAccount == "" {
+		return r.SendEnvelope(map[string]any{"status": "skipped_no_account"})
+	}
+	account, err := a.resolveWhatsAppAccount(orgID, contact.WhatsAppAccount)
+	if err != nil {
+		return r.SendEnvelope(map[string]any{"status": "skipped_account_missing"})
+	}
+	if account.Provider != wameow.Provider || a.Whatsmeow == nil {
+		// Cloud API has no typing primitive — no-op.
+		return r.SendEnvelope(map[string]any{"status": "not_supported_for_provider"})
+	}
+	client := a.Whatsmeow.Get(account.ID)
+	if client == nil {
+		return r.SendEnvelope(map[string]any{"status": "skipped_session_not_connected"})
+	}
+
+	// Use the request context; 2s timeout is plenty — a typing indicator
+	// is pure advisory, nothing blocks on it.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := client.SendTypingIndicator(ctx, contact.PhoneNumber, body.IsTyping); err != nil {
+		// Log but do not surface — see rationale in the comment above.
+		a.Log.Debug("whatsmeow send typing failed", "error", err)
+	}
+	return r.SendEnvelope(map[string]any{"status": "ok"})
+}
+
 // --- WebSocket: QR code stream ------------------------------------------
 
 // WhatsmeowQRWebSocket upgrades the connection and streams QR codes +

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	wameow "github.com/shridarpatil/whatomate/internal/integrations/whatsmeow"
 	"github.com/shridarpatil/whatomate/internal/models"
+	"github.com/shridarpatil/whatomate/internal/websocket"
 	"go.mau.fi/whatsmeow/types"
 )
 
@@ -126,6 +127,84 @@ func (a *App) OnLoggedOut(ctx context.Context, accountID uuid.UUID) {
 			"account_id", accountID, "error", err)
 	}
 	a.Log.Warn("whatsmeow session logged out", "account_id", accountID)
+}
+
+// OnReadReceipt updates Message.Status for every message ID in the
+// batch + broadcasts a status_update WebSocket event so the agent
+// panel renders the tick color immediately. Mirrors what the Cloud
+// API webhook does when Meta reports a status=read.
+func (a *App) OnReadReceipt(ctx context.Context, accountID uuid.UUID, fromPhone string, messageIDs []string, deliveryType string) {
+	if len(messageIDs) == 0 {
+		return
+	}
+	var status models.MessageStatus
+	switch deliveryType {
+	case "delivered":
+		status = models.MessageStatusDelivered
+	case "read":
+		status = models.MessageStatusRead
+	default:
+		return
+	}
+
+	// Bulk update all messages in this receipt batch. The orgID scope is
+	// implicit because the WAMID is globally unique — but we still join
+	// via the account row to keep the query tenant-safe.
+	var account models.WhatsAppAccount
+	if err := a.DB.Where("id = ?", accountID).First(&account).Error; err != nil {
+		return
+	}
+	if err := a.DB.Model(&models.Message{}).
+		Where("organization_id = ? AND whats_app_message_id IN ?", account.OrganizationID, messageIDs).
+		Update("status", status).Error; err != nil {
+		a.Log.Warn("whatsmeow: update message status failed",
+			"account_id", accountID, "error", err)
+		return
+	}
+
+	// Broadcast one status_update per message so the agent panel
+	// updates the ticks without a refresh. Mirrors the Cloud API path.
+	if a.WSHub == nil {
+		return
+	}
+	for _, id := range messageIDs {
+		a.WSHub.BroadcastToOrg(account.OrganizationID, websocket.WSMessage{
+			Type: websocket.TypeStatusUpdate,
+			Payload: map[string]any{
+				"wamid":  id,
+				"status": status,
+			},
+		})
+	}
+}
+
+// OnChatPresence broadcasts a typing_indicator payload to the agent
+// panel. The frontend renders (or hides) the three-dot bubble in the
+// chat header. The event is ephemeral — we do not persist it.
+func (a *App) OnChatPresence(accountID uuid.UUID, fromPhone string, isTyping bool) {
+	if a.WSHub == nil {
+		return
+	}
+	// Resolve org + contact so the frontend can filter the WS message
+	// to the chat it is currently showing.
+	var account models.WhatsAppAccount
+	if err := a.DB.Where("id = ?", accountID).First(&account).Error; err != nil {
+		return
+	}
+	var contact models.Contact
+	if err := a.DB.
+		Where("organization_id = ? AND phone_number = ?", account.OrganizationID, fromPhone).
+		First(&contact).Error; err != nil {
+		return
+	}
+	a.WSHub.BroadcastToOrg(account.OrganizationID, websocket.WSMessage{
+		Type: websocket.TypeTypingIndicator,
+		Payload: map[string]any{
+			"contact_id": contact.ID.String(),
+			"account_id": accountID.String(),
+			"is_typing":  isTyping,
+		},
+	})
 }
 
 // dispatchWhatsmeowSend is the outbound counterpart of OnIncomingMessage:

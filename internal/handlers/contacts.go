@@ -488,6 +488,27 @@ func (a *App) markMessagesAsRead(orgID uuid.UUID, contactID uuid.UUID, contact *
 					ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 					defer cancel()
 
+					// Phase W.3: provider-aware mark-as-read. Whatsmeow
+					// accepts a batch + a sender JID; Cloud API uses a
+					// per-message POST. Fan out accordingly.
+					if account.Provider == "whatsmeow" && a.Whatsmeow != nil {
+						client := a.Whatsmeow.Get(account.ID)
+						if client == nil {
+							a.Log.Debug("whatsmeow read-receipt skipped: session not connected", "account_id", account.ID)
+							return
+						}
+						ids := make([]string, 0, len(unreadMessages))
+						for _, msg := range unreadMessages {
+							if msg.WhatsAppMessageID != "" {
+								ids = append(ids, msg.WhatsAppMessageID)
+							}
+						}
+						if err := client.MarkRead(ctx, ids, contact.PhoneNumber); err != nil {
+							a.Log.Error("whatsmeow mark read failed", "error", err, "count", len(ids))
+						}
+						return
+					}
+
 					waAccount := a.toWhatsAppAccount(account)
 					for _, msg := range unreadMessages {
 						// Check if context was cancelled
