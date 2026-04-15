@@ -142,6 +142,15 @@ func (a *App) SendOutgoingMessage(ctx context.Context, req OutgoingMessageReques
 
 	// 2. Define the send function based on message type
 	sendFn := func(sendCtx context.Context) (string, error) {
+		// Phase W.1: route through whatsmeow when the account uses the
+		// unofficial provider. Delegates all supported subtypes to
+		// dispatchWhatsmeowSend; unsupported subtypes (templates, flows,
+		// complex interactives) return a clear error so the UI can tell
+		// the agent "not available on this provider".
+		if req.Account != nil && req.Account.Provider == "whatsmeow" {
+			return a.dispatchWhatsmeowSend(sendCtx, req)
+		}
+
 		waAccount := a.toWhatsAppAccount(req.Account)
 		rcpt := whatsapp.Recipient{Phone: req.Contact.PhoneNumber, BSUID: req.Contact.BSUID}
 

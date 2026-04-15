@@ -680,6 +680,12 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.DELETE("/api/accounts/{id}", app.DeleteAccount)
 	g.POST("/api/accounts/{id}/test", app.TestAccountConnection)
 	g.POST("/api/accounts/{id}/subscribe", app.SubscribeApp)
+	// Whatsmeow (unofficial WhatsApp Web protocol) provider lifecycle.
+	g.POST("/api/accounts/{id}/whatsmeow/connect", app.ConnectWhatsmeow)
+	g.POST("/api/accounts/{id}/whatsmeow/disconnect", app.DisconnectWhatsmeow)
+	g.POST("/api/accounts/{id}/whatsmeow/logout", app.LogoutWhatsmeow)
+	g.GET("/api/accounts/{id}/whatsmeow/status", app.WhatsmeowStatus)
+	g.GET("/ws/whatsmeow/{id}", app.WhatsmeowQRWebSocket)
 	g.GET("/api/accounts/{id}/business_profile", app.GetBusinessProfile)
 	g.PUT("/api/accounts/{id}/business_profile", app.UpdateBusinessProfile)
 	g.POST("/api/accounts/{id}/business_profile/photo", app.UpdateProfilePicture)

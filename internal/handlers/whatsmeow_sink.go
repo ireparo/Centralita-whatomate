@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,6 +105,49 @@ func (a *App) OnLoggedOut(ctx context.Context, accountID uuid.UUID) {
 			"account_id", accountID, "error", err)
 	}
 	a.Log.Warn("whatsmeow session logged out", "account_id", accountID)
+}
+
+// dispatchWhatsmeowSend is the outbound counterpart of OnIncomingMessage:
+// when the WhatsAppAccount uses provider="whatsmeow", the unified
+// SendOutgoingMessage routes through here instead of the Cloud API
+// client.
+//
+// Phase W.1 supports TEXT only. Media / interactive / template / flow
+// subtypes return a structured error so the UI can surface "feature
+// not available on this provider" without the operator having to dig
+// through logs. Phase W.2 will add image/audio/video/document support.
+func (a *App) dispatchWhatsmeowSend(ctx context.Context, req OutgoingMessageRequest) (string, error) {
+	if a.Whatsmeow == nil {
+		return "", fmt.Errorf("whatsmeow provider unavailable on this instance")
+	}
+	if req.Account == nil || req.Contact == nil {
+		return "", fmt.Errorf("whatsmeow send: missing account or contact")
+	}
+	client := a.Whatsmeow.Get(req.Account.ID)
+	if client == nil {
+		return "", fmt.Errorf("whatsmeow session for account %s is not connected", req.Account.ID)
+	}
+
+	switch req.Type {
+	case models.MessageTypeText:
+		body := req.Content
+		if body == "" {
+			return "", fmt.Errorf("whatsmeow send: empty text body")
+		}
+		return client.SendTextMessage(ctx, req.Contact.PhoneNumber, body)
+
+	case models.MessageTypeImage,
+		models.MessageTypeVideo,
+		models.MessageTypeAudio,
+		models.MessageTypeDocument,
+		models.MessageTypeTemplate,
+		models.MessageTypeInteractive,
+		models.MessageTypeFlow:
+		return "", fmt.Errorf("message type %q is not supported by the WhatsApp Web provider yet (Phase W.2)", req.Type)
+
+	default:
+		return "", fmt.Errorf("unsupported message type %q for whatsmeow provider", req.Type)
+	}
 }
 
 // resolveOrCreateContact is a thin helper that reuses the same
