@@ -12,6 +12,7 @@ import MetadataPanel from '@/components/shared/MetadataPanel.vue'
 import AuditLogPanel from '@/components/shared/AuditLogPanel.vue'
 import UnsavedChangesDialog from '@/components/shared/UnsavedChangesDialog.vue'
 import BusinessProfileDialog from './BusinessProfileDialog.vue'
+import WhatsmeowPairingCard from '@/components/account/WhatsmeowPairingCard.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -437,6 +438,14 @@ onMounted(async () => {
       v-if="account && !isNew"
       resource-type="account"
       :resource-id="account.id"
+    />
+
+    <!-- WhatsApp Web (whatsmeow) pairing card — only for accounts
+         whose provider is "whatsmeow". Slotted after the standard
+         account fields so Cloud API accounts are unchanged. -->
+    <WhatsmeowPairingCard
+      v-if="!isNew && account && account.provider === 'whatsmeow'"
+      :account-id="account.id"
     />
 
     <!-- Sidebar -->

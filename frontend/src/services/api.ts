@@ -474,6 +474,57 @@ export const callAnalyticsService = {
   }) => api.get<CallAnalyticsResponse>('/analytics/calls', { params }),
 }
 
+// ---- Whatsmeow (unofficial WhatsApp Web protocol provider) --------------
+//
+// VIOLATES WhatsApp ToS. Use only with user-facing disclaimer. The
+// official Cloud API remains the default provider.
+
+export type WhatsmeowState =
+  | 'initialized'
+  | 'connecting'
+  | 'waiting_qr'
+  | 'logged_in'
+  | 'logged_out'
+  | 'error'
+
+export interface WhatsmeowStatus {
+  state: WhatsmeowState
+  paired: boolean
+  jid?: string
+  last_error?: string
+}
+
+export interface WhatsmeowConnectResponse {
+  account_id: string
+  state: WhatsmeowState
+  paired: boolean
+  needs_qr: boolean
+}
+
+export const whatsmeowService = {
+  status: (accountId: string) =>
+    api.get<WhatsmeowStatus>(`/accounts/${accountId}/whatsmeow/status`),
+  connect: (accountId: string) =>
+    api.post<WhatsmeowConnectResponse>(`/accounts/${accountId}/whatsmeow/connect`),
+  disconnect: (accountId: string) =>
+    api.post<{ status: string }>(`/accounts/${accountId}/whatsmeow/disconnect`),
+  logout: (accountId: string) =>
+    api.post<{ status: string }>(`/accounts/${accountId}/whatsmeow/logout`),
+  /**
+   * Build the absolute WebSocket URL for the QR stream. Consumer must
+   * attach the JWT via a first `{"type":"auth","payload":{"token":...}}`
+   * message, then receive `{type:"qr"|"state"|"error", payload:string}`
+   * messages until the socket closes on pair success / timeout.
+   */
+  qrWebSocketURL(accountId: string): string {
+    const base = api.defaults.baseURL || ''
+    // Strip the /api prefix so we hit the bare /ws/... path.
+    const origin = base.replace(/\/api\/?$/, '')
+    const wsOrigin = origin.replace(/^http/, 'ws')
+    return `${wsOrigin}/ws/whatsmeow/${accountId}`
+  },
+}
+
 // Meta WhatsApp Analytics Types
 export type MetaAnalyticsType =
   | 'analytics'
