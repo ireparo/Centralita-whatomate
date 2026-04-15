@@ -1611,8 +1611,14 @@ async function sendMediaMessage() {
             <div>
               <div class="flex items-center gap-1.5">
                 <p class="text-sm font-medium text-white light:text-gray-900">
-                  {{ contactsStore.currentContact.name || contactsStore.currentContact.phone_number }}
+                  {{ contactsStore.currentContact.group_subject || contactsStore.currentContact.name || contactsStore.currentContact.phone_number }}
                 </p>
+                <!-- Group badge: lets the agent tell at a glance that
+                     this conversation is a WhatsApp group and every
+                     message has a sender attribution rendered above it. -->
+                <Badge v-if="contactsStore.currentContact?.is_group" class="text-[10px] h-5 bg-indigo-500/20 text-indigo-400 light:bg-indigo-100 light:text-indigo-700">
+                  {{ $t('chat.group', 'Group') }}
+                </Badge>
                 <Badge v-if="activeTransferId" class="text-[10px] h-5 bg-orange-500/20 text-orange-400 light:bg-orange-100 light:text-orange-700">
                   Paused
                 </Badge>
@@ -1818,6 +1824,19 @@ async function sendMediaMessage() {
                   message.direction === 'outgoing' ? 'chat-bubble-outgoing' : 'chat-bubble-incoming'
                 ]"
               >
+                <!-- Group sender header (Phase W.4). Renders above the
+                     message body so agents can tell which participant
+                     in the group is speaking. Only shown for incoming
+                     messages in group conversations (outgoing messages
+                     are always the agent, identified via SentByUser
+                     elsewhere). -->
+                <p
+                  v-if="contactsStore.currentContact?.is_group && message.direction === 'incoming' && (message.sender_name || message.sender_phone)"
+                  class="text-[11px] font-semibold text-indigo-500 light:text-indigo-600 mb-0.5"
+                >
+                  {{ message.sender_name || message.sender_phone }}
+                </p>
+
                 <!-- Reply preview (if this message is replying to another) -->
                 <div
                   v-if="message.is_reply && message.reply_to_message"

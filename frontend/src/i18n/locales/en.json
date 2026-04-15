@@ -306,6 +306,7 @@
   "chat": {
     "marketingOptOut": "Marketing Opt-out",
     "typing": "typing…",
+    "group": "Group",
     "conversations": "Conversations",
     "messages": "Messages",
     "noContacts": "No contacts found",

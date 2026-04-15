@@ -18,6 +18,11 @@ export interface Contact {
   assigned_user_id?: string
   whatsapp_account?: string
   marketing_opt_out?: boolean
+  // Phase W.4 (whatsmeow only): true when this Contact actually
+  // represents a WhatsApp group rather than a single person.
+  is_group?: boolean
+  group_jid?: string
+  group_subject?: string
   created_at: string
   updated_at: string
 }
@@ -66,6 +71,9 @@ export interface Message {
   reply_to_message?: ReplyPreview
   reactions?: Reaction[]
   whatsapp_account?: string
+  // Phase W.4: group participant attribution. Zero on 1:1 messages.
+  sender_phone?: string
+  sender_name?: string
   created_at: string
   updated_at: string
 }
