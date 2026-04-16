@@ -329,10 +329,10 @@ func (a *App) WhatsmeowQRWebSocket(r *fastglue.Request) error {
 
 	up := a.wsUpgrader()
 	return up.Upgrade(r.RequestCtx, func(conn *websocket.Conn) {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		// --- Auth message (mirrors the main WS handler pattern) ---
-		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 		var authMsg struct {
 			Type    string `json:"type"`
 			Payload struct {
@@ -349,7 +349,7 @@ func (a *App) WhatsmeowQRWebSocket(r *fastglue.Request) error {
 			writeWSMsg(conn, "error", "invalid token")
 			return
 		}
-		conn.SetReadDeadline(time.Time{}) // clear deadline for the rest of the session
+		_ = conn.SetReadDeadline(time.Time{}) // clear deadline for the rest of the session
 
 		// Re-check the account belongs to this org (could have been
 		// deleted between the HTTP call and the WS open).

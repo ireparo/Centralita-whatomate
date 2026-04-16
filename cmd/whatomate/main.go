@@ -292,7 +292,7 @@ func runServer(args []string) {
 			Where("provider = ? AND whatsmeow_jid <> ''", wameow.Provider).
 			Select("id, whatsmeow_jid").Rows()
 		if err == nil {
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 			for rows.Next() {
 				var id uuid.UUID
 				var jidStr string

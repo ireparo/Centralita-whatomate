@@ -120,7 +120,7 @@ func (c *Client) Lookup(ctx context.Context, phoneRaw string) (*LookupResponse, 
 	if err != nil {
 		return nil, fmt.Errorf("crm lookup: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB safety cap
 	if err != nil {
@@ -215,7 +215,7 @@ func (c *Client) Send(ctx context.Context, env *EventEnvelope) error {
 	if err != nil {
 		return fmt.Errorf("crm send: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
 		return fmt.Errorf("crm send: http %d: %s", resp.StatusCode, truncate(body, 200))

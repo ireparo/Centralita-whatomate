@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -368,14 +367,4 @@ func (a *App) GetCallAnalytics(r *fastglue.Request) error {
 	}
 
 	return r.SendEnvelope(out)
-}
-
-// parsePositiveInt is a small helper used by future analytics endpoints
-// to avoid repeating the "parse, default on error" dance.
-func parsePositiveInt(s string, defaultVal int) int {
-	n, err := strconv.Atoi(s)
-	if err != nil || n <= 0 {
-		return defaultVal
-	}
-	return n
 }

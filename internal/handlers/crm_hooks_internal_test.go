@@ -126,7 +126,7 @@ func TestExternalCRMIDOrNil(t *testing.T) {
 		t.Errorf("nil contact should return nil, got %v", got)
 	}
 
-	var none *models.Contact = &models.Contact{}
+	none := &models.Contact{}
 	if got := externalCRMIDOrNil(none); got != nil {
 		t.Errorf("contact without external id should return nil, got %v", got)
 	}

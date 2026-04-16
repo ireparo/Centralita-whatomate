@@ -539,7 +539,7 @@ func (c *Client) DownloadMedia(ctx context.Context, msg *waProto.Message) ([]byt
 	// whatsmeow.Client.DownloadAny inspects the Message proto and picks
 	// whichever media submessage is present (ImageMessage / AudioMessage
 	// / VideoMessage / DocumentMessage / StickerMessage).
-	return c.wm.DownloadAny(ctx, msg)
+	return c.wm.DownloadAny(ctx, msg) //nolint:staticcheck
 }
 
 // SendTypingIndicator tells WhatsApp "this agent is currently typing"
@@ -689,8 +689,8 @@ func (c *Client) GetGroupInfo(ctx context.Context, groupJID string) (*GroupInfoS
 		JID:     info.JID.String(),
 		Subject: info.Name,
 	}
-	if info.GroupTopic.Topic != "" {
-		out.Description = info.GroupTopic.Topic
+	if info.Topic != "" {
+		out.Description = info.Topic
 	}
 	if !info.OwnerJID.IsEmpty() {
 		out.OwnerPhone = jidToPhone(info.OwnerJID)
