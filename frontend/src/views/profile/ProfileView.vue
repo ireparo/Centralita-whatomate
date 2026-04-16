@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { toast } from 'vue-sonner'
-import { User, Eye, EyeOff, Loader2 } from 'lucide-vue-next'
-import { usersService } from '@/services/api'
+import { User, Eye, EyeOff, Loader2, PhoneCall } from 'lucide-vue-next'
+import { usersService, userPhoneService } from '@/services/api'
 import { useAuthStore } from '@/stores/auth'
 import { PageHeader } from '@/components/shared'
 import { getErrorMessage } from '@/lib/api-utils'
@@ -19,6 +19,30 @@ const isChangingPassword = ref(false)
 const showCurrentPassword = ref(false)
 const showNewPassword = ref(false)
 const showConfirmPassword = ref(false)
+
+// Agent phone (used by click-to-call).
+const phoneInput = ref<string>((authStore.user as any)?.phone_number || '')
+const isSavingPhone = ref(false)
+
+async function savePhone() {
+  isSavingPhone.value = true
+  try {
+    const response = await userPhoneService.update(phoneInput.value.trim())
+    const data = (response.data as any).data || response.data
+    const normalized = data?.phone_number ?? ''
+    // Keep the store in sync so the click-to-call button reflects the
+    // new value immediately across other views without a reload.
+    if (authStore.user) {
+      ;(authStore.user as any).phone_number = normalized
+    }
+    phoneInput.value = normalized
+    toast.success(t('profile.phoneSaved'))
+  } catch (e) {
+    toast.error(getErrorMessage(e, t('profile.phoneSaveFailed')))
+  } finally {
+    isSavingPhone.value = false
+  }
+}
 
 const passwordForm = ref({
   current_password: '',
@@ -92,6 +116,34 @@ async function changePassword() {
                 <Label class="text-muted-foreground">{{ $t('users.role') }}</Label>
                 <p class="font-medium capitalize">{{ authStore.user?.role?.name }}</p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- Personal phone (click-to-call) -->
+        <Card>
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <PhoneCall class="h-5 w-5" />
+              {{ $t('profile.phoneTitle') }}
+            </CardTitle>
+            <CardDescription>{{ $t('profile.phoneDesc') }}</CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div class="space-y-2">
+              <Label for="phone_number">{{ $t('profile.phoneLabel') }}</Label>
+              <Input
+                id="phone_number"
+                v-model="phoneInput"
+                placeholder="+34 666 11 22 33"
+              />
+              <p class="text-xs text-muted-foreground">{{ $t('profile.phoneHint') }}</p>
+            </div>
+            <div class="flex justify-end">
+              <Button variant="outline" size="sm" @click="savePhone" :disabled="isSavingPhone">
+                <Loader2 v-if="isSavingPhone" class="mr-2 h-4 w-4 animate-spin" />
+                {{ $t('common.save') }}
+              </Button>
             </div>
           </CardContent>
         </Card>

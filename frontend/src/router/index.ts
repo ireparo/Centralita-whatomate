@@ -159,6 +159,12 @@ const router = createRouter({
           meta: { permission: 'analytics.agents' }
         },
         {
+          path: 'analytics/calls',
+          name: 'call-analytics',
+          component: () => import('@/views/analytics/CallAnalyticsView.vue'),
+          meta: { permission: 'call_logs' }
+        },
+        {
           path: 'analytics/meta-insights',
           name: 'meta-insights',
           component: () => import('@/views/analytics/MetaInsightsView.vue'),
@@ -265,6 +271,18 @@ const router = createRouter({
           name: 'audit-log-detail',
           component: () => import('@/views/settings/AuditLogDetailView.vue'),
           meta: { permission: 'audit_logs' }
+        },
+        {
+          path: 'settings/crm-queue',
+          name: 'crm-queue',
+          component: () => import('@/views/settings/CrmQueueView.vue'),
+          meta: { permission: 'settings.general' }
+        },
+        {
+          path: 'settings/telnyx',
+          name: 'telnyx-settings',
+          component: () => import('@/views/settings/TelnyxView.vue'),
+          meta: { permission: 'settings.general' }
         },
         {
           path: 'calling',

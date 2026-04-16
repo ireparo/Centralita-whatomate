@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/mail"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shridarpatil/whatomate/internal/calling"
 	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/valyala/fasthttp"
 	"github.com/zerodha/fastglue"
@@ -49,9 +51,12 @@ type UserResponse struct {
 	IsSuperAdmin   bool         `json:"is_super_admin"`
 	IsMember       bool         `json:"is_member"`
 	OrganizationID uuid.UUID    `json:"organization_id"`
-	Settings       models.JSONB `json:"settings,omitempty"`
-	CreatedAt      string       `json:"created_at"`
-	UpdatedAt      string       `json:"updated_at"`
+	// PhoneNumber is the agent's personal phone (E.164 without "+"), used by
+	// click-to-call. Empty string = not configured. See User.PhoneNumber.
+	PhoneNumber string       `json:"phone_number,omitempty"`
+	Settings    models.JSONB `json:"settings,omitempty"`
+	CreatedAt   string       `json:"created_at"`
+	UpdatedAt   string       `json:"updated_at"`
 }
 
 // PermissionInfo represents permission info in role response
@@ -641,6 +646,41 @@ func (a *App) GetCurrentUser(r *fastglue.Request) error {
 	return r.SendEnvelope(userToResponse(user))
 }
 
+// UpdateCurrentUserPhone lets the authenticated agent set/clear their own
+// phone number (used by Telnyx click-to-call). Empty string = clear the
+// number, which disables click-to-call for this agent.
+func (a *App) UpdateCurrentUserPhone(r *fastglue.Request) error {
+	userID, ok := r.RequestCtx.UserValue("user_id").(uuid.UUID)
+	if !ok {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Unauthorized", nil, "")
+	}
+
+	var req struct {
+		PhoneNumber string `json:"phone_number"`
+	}
+	if err := json.Unmarshal(r.RequestCtx.PostBody(), &req); err != nil {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid request body", nil, "")
+	}
+
+	// Normalize to E.164 without "+" (same format used by Contact.PhoneNumber
+	// and Telnyx webhook events, so comparisons stay consistent).
+	normalized := ""
+	if req.PhoneNumber != "" {
+		normalized = calling.PhoneToE164(req.PhoneNumber)
+		if normalized == "" {
+			return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Invalid phone number", nil, "")
+		}
+	}
+
+	if err := a.DB.Model(&models.User{}).
+		Where("id = ?", userID).
+		Update("phone_number", normalized).Error; err != nil {
+		a.Log.Error("UpdateCurrentUserPhone failed", "error", err, "user_id", userID)
+		return r.SendErrorEnvelope(fasthttp.StatusInternalServerError, "Failed to update phone", nil, "")
+	}
+	return r.SendEnvelope(map[string]any{"phone_number": normalized})
+}
+
 // splitPermission splits a "resource:action" string
 func splitPermission(p string) []string {
 	for i := len(p) - 1; i >= 0; i-- {
@@ -748,6 +788,7 @@ func userToResponse(user models.User) UserResponse {
 		IsAvailable:    user.IsAvailable,
 		IsSuperAdmin:   user.IsSuperAdmin,
 		OrganizationID: user.OrganizationID,
+		PhoneNumber:    user.PhoneNumber,
 		Settings:       user.Settings,
 		CreatedAt:      user.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		UpdatedAt:      user.UpdatedAt.Format("2006-01-02T15:04:05Z"),

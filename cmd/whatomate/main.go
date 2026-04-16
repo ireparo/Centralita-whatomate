@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/shridarpatil/whatomate/internal/assignment"
 	"github.com/shridarpatil/whatomate/internal/calling"
@@ -21,12 +22,15 @@ import (
 	"github.com/shridarpatil/whatomate/internal/frontend"
 	"github.com/shridarpatil/whatomate/internal/handlers"
 	"github.com/shridarpatil/whatomate/internal/integrations/crm"
+	wameow "github.com/shridarpatil/whatomate/internal/integrations/whatsmeow"
 	"github.com/shridarpatil/whatomate/internal/middleware"
+	"github.com/shridarpatil/whatomate/internal/models"
 	"github.com/shridarpatil/whatomate/internal/queue"
 	"github.com/shridarpatil/whatomate/internal/websocket"
 	"github.com/shridarpatil/whatomate/internal/worker"
 	"github.com/shridarpatil/whatomate/pkg/whatsapp"
 	"github.com/valyala/fasthttp"
+	waLog "go.mau.fi/whatsmeow/util/log"
 	"github.com/zerodha/fastglue"
 	"github.com/zerodha/logf"
 )
@@ -252,6 +256,60 @@ func runServer(args []string) {
 		go crm.NewQueueWorker(db, app.CRM, lo).Run(crmQueueCtx)
 	} else {
 		lo.Info("CRM integration disabled (integrations.crm.enabled = false)")
+	}
+
+	// Initialize whatsmeow session manager (Phase W.1 — unofficial WhatsApp
+	// Web protocol alternative to the Cloud API). The manager holds one
+	// *whatsmeow.Client per paired account and bridges events back to the
+	// App through the EventSink interface (handlers/whatsmeow_sink.go).
+	//
+	// The container runs its own schema migrations against our Postgres
+	// DB under `whatsmeow_*` table names — they do not collide with GORM.
+	whatsmeowDSN := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.Host,
+		cfg.Database.Port,
+		cfg.Database.Name,
+		cfg.Database.SSLMode,
+	)
+	wmMgr, err := wameow.NewSessionManager(context.Background(), wameow.SessionManagerConfig{
+		PostgresDSN: whatsmeowDSN,
+		Sink:        app,
+		Log:         waLog.Stdout("whatsmeow", "INFO", true),
+	})
+	if err != nil {
+		lo.Warn("whatsmeow session manager init failed — unofficial WhatsApp provider will be unavailable",
+			"error", err)
+	} else {
+		app.Whatsmeow = wmMgr
+		lo.Info("whatsmeow session manager initialized")
+		// Warm up sessions for already-paired accounts. This lets incoming
+		// messages start flowing without requiring the admin to open the
+		// account page after a restart.
+		var refs []wameow.AccountRef
+		rows, err := db.Model(&models.WhatsAppAccount{}).
+			Where("provider = ? AND whatsmeow_jid <> ''", wameow.Provider).
+			Select("id, whatsmeow_jid").Rows()
+		if err == nil {
+			defer func() { _ = rows.Close() }()
+			for rows.Next() {
+				var id uuid.UUID
+				var jidStr string
+				if err := rows.Scan(&id, &jidStr); err != nil {
+					continue
+				}
+				parsedJID, err := wameow.ParseJID(jidStr)
+				if err != nil {
+					continue
+				}
+				refs = append(refs, wameow.AccountRef{ID: id, JID: parsedJID})
+			}
+			if len(refs) > 0 {
+				lo.Info("whatsmeow: warming up paired sessions", "count", len(refs))
+				wmMgr.ReconnectAll(context.Background(), refs)
+			}
+		}
 	}
 
 	// Initialize TTS if configured (requires piper binary + model)
@@ -554,7 +612,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 		// Skip auth for public routes
 		if path == "/health" || path == "/ready" ||
 			path == "/api/auth/login" || path == "/api/auth/register" || path == "/api/auth/refresh" ||
-			path == "/api/auth/logout" || path == "/api/webhook" || path == "/api/webhook/telnyx" || path == "/ws" {
+			path == "/api/auth/logout" || path == "/api/webhook" || path == "/api/webhook/telnyx" || strings.HasPrefix(path, "/api/crm/") || path == "/ws" {
 			return r
 		}
 		// Skip auth for SSO routes (they handle their own auth via state tokens)
@@ -591,6 +649,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.PUT("/api/me/settings", app.UpdateCurrentUserSettings)
 	g.PUT("/api/me/password", app.ChangePassword)
 	g.PUT("/api/me/availability", app.UpdateAvailability)
+	g.PUT("/api/me/phone", app.UpdateCurrentUserPhone)
 	g.GET("/api/me/organizations", app.ListMyOrganizations)
 
 	// User Management (admin only - enforced by middleware)
@@ -621,6 +680,22 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.DELETE("/api/accounts/{id}", app.DeleteAccount)
 	g.POST("/api/accounts/{id}/test", app.TestAccountConnection)
 	g.POST("/api/accounts/{id}/subscribe", app.SubscribeApp)
+	// Whatsmeow (unofficial WhatsApp Web protocol) provider lifecycle.
+	g.POST("/api/accounts/{id}/whatsmeow/connect", app.ConnectWhatsmeow)
+	g.POST("/api/accounts/{id}/whatsmeow/disconnect", app.DisconnectWhatsmeow)
+	g.POST("/api/accounts/{id}/whatsmeow/logout", app.LogoutWhatsmeow)
+	g.GET("/api/accounts/{id}/whatsmeow/status", app.WhatsmeowStatus)
+	g.GET("/ws/whatsmeow/{id}", app.WhatsmeowQRWebSocket)
+	// Typing indicator (Phase W.3) — provider-aware no-op for Cloud API.
+	g.POST("/api/contacts/{id}/whatsmeow/typing", app.SendWhatsmeowTyping)
+	// Group admin (Phase W.5). Create is on the account; rest are on
+	// the group Contact the agent is viewing.
+	g.POST("/api/accounts/{id}/whatsmeow/groups", app.CreateWhatsmeowGroup)
+	g.GET("/api/contacts/{id}/whatsmeow/group", app.GetWhatsmeowGroupInfo)
+	g.POST("/api/contacts/{id}/whatsmeow/group/participants", app.UpdateWhatsmeowGroupParticipants)
+	g.PUT("/api/contacts/{id}/whatsmeow/group/subject", app.SetWhatsmeowGroupSubject)
+	g.PUT("/api/contacts/{id}/whatsmeow/group/description", app.SetWhatsmeowGroupDescription)
+	g.POST("/api/contacts/{id}/whatsmeow/group/leave", app.LeaveWhatsmeowGroup)
 	g.GET("/api/accounts/{id}/business_profile", app.GetBusinessProfile)
 	g.PUT("/api/accounts/{id}/business_profile", app.UpdateBusinessProfile)
 	g.POST("/api/accounts/{id}/business_profile/photo", app.UpdateProfilePicture)
@@ -750,6 +825,37 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/audit-logs", app.ListAuditLogs)
 	g.GET("/api/audit-logs/{id}", app.GetAuditLog)
 
+	// CRM integration — dead-letter queue admin (Phase 3.2)
+	g.GET("/api/admin/crm-queue", app.ListCRMEventQueue)
+	g.POST("/api/admin/crm-queue/{id}/replay", app.ReplayCRMEventQueue)
+	g.DELETE("/api/admin/crm-queue/{id}", app.DeleteCRMEventQueue)
+
+	// CRM → PBX endpoints (Phase 3.2–3.3). Public routes — auth is
+	// via X-iReparo-Api-Key + X-iReparo-Signature, not JWT.
+	g.POST("/api/crm/invalidate-cache", app.InvalidateCRMCache)
+	g.POST("/api/crm/click-to-call", app.CRMClickToCall)
+
+	// Telnyx PSTN — connection + numbers admin (Phase 2.4 UI)
+	g.GET("/api/telnyx/connection", app.GetTelnyxConnection)
+	g.POST("/api/telnyx/connections", app.CreateTelnyxConnection)
+	g.PUT("/api/telnyx/connections/{id}", app.UpdateTelnyxConnection)
+	g.DELETE("/api/telnyx/connections/{id}", app.DeleteTelnyxConnection)
+	g.POST("/api/telnyx/connections/test", app.TestTelnyxConnection)
+
+	g.GET("/api/telnyx/numbers", app.ListTelnyxNumbers)
+	g.POST("/api/telnyx/numbers", app.CreateTelnyxNumber)
+	g.PUT("/api/telnyx/numbers/{id}", app.UpdateTelnyxNumber)
+	g.DELETE("/api/telnyx/numbers/{id}", app.DeleteTelnyxNumber)
+
+	// Public signed IVR audio endpoint — used by Telnyx to fetch IVR prompts
+	// during a call. Auth is via HMAC in the URL; no JWT required.
+	g.GET("/api/public/ivr-audio/{filename}", app.ServeSignedIVRAudio)
+
+	// Telnyx click-to-call — agent initiates an outbound PSTN call to a
+	// contact. Callback pattern: dials the agent's phone first, transfers
+	// to the contact on answer.
+	g.POST("/api/calls/telnyx/click-to-call", app.InitiateClickToCall)
+
 	// Canned Responses
 	g.GET("/api/canned-responses", app.ListCannedResponses)
 	g.POST("/api/canned-responses", app.CreateCannedResponse)
@@ -769,6 +875,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.GET("/api/analytics/agents", app.GetAgentAnalytics)
 	g.GET("/api/analytics/agents/{id}", app.GetAgentDetails)
 	g.GET("/api/analytics/agents/comparison", app.GetAgentComparison)
+	g.GET("/api/analytics/calls", app.GetCallAnalytics)
 
 	// Meta WhatsApp Analytics
 	g.GET("/api/analytics/meta", app.GetMetaAnalytics)

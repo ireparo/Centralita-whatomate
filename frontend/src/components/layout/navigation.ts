@@ -21,7 +21,9 @@ import {
   Tags,
   PhoneCall,
   PhoneForwarded,
-  ScrollText
+  ScrollText,
+  AlertCircle,
+  Phone
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
@@ -111,13 +113,19 @@ export const navigationSections: NavSection[] = [
   },
   {
     label: 'nav.sectionAnalytics',
-    permissions: ['analytics.agents', 'analytics'],
+    permissions: ['analytics.agents', 'analytics', 'call_logs'],
     items: [
       {
         name: 'nav.agentAnalytics',
         path: '/analytics/agents',
         icon: BarChart3,
         permission: 'analytics.agents'
+      },
+      {
+        name: 'nav.callAnalytics',
+        path: '/analytics/calls',
+        icon: PhoneCall,
+        permission: 'call_logs'
       },
       {
         name: 'nav.metaInsights',
@@ -152,7 +160,9 @@ export const navigationSections: NavSection[] = [
           { name: 'nav.webhooks', path: '/settings/webhooks', icon: Webhook, permission: 'webhooks' },
           { name: 'nav.customActions', path: '/settings/custom-actions', icon: Zap, permission: 'custom_actions' },
           { name: 'nav.sso', path: '/settings/sso', icon: ShieldCheck, permission: 'settings.sso' },
-          { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText, permission: 'audit_logs' }
+          { name: 'nav.auditLogs', path: '/settings/audit-logs', icon: ScrollText, permission: 'audit_logs' },
+          { name: 'nav.crmQueue', path: '/settings/crm-queue', icon: AlertCircle, permission: 'settings.general' },
+          { name: 'nav.telnyxSettings', path: '/settings/telnyx', icon: Phone, permission: 'settings.general' }
         ]
       }
     ]

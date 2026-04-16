@@ -186,35 +186,320 @@ configuraste storage S3).
 
 ## 6. Pegar todo en iReparo
 
-> En Phase 2.1 (commit actual) la UI de "Telefonía PSTN" todavía no existe
-> en el panel. Esta sección es un placeholder de cómo será cuando llegue
-> Phase 2.2.
+Entra en **iReparo → Ajustes → Telefonía PSTN**. La primera vez verás el
+estado vacío con un botón **Añadir conexión**.
 
-Cuando esté lista la UI, harás:
+### 6.1 Conexión Telnyx
 
-1. iReparo → **Ajustes → Telefonía PSTN → + Nueva conexión**.
-2. Rellenar:
+1. Pulsa **Añadir conexión**. Rellena:
    - **Etiqueta**: `Telnyx producción`
-   - **Proveedor**: `Telnyx`
-   - **API Key**: pegar la del paso 4
-   - **Public Key**: pegar la del paso 2
-   - **Call Control App ID**: pegar la del paso 2
-   - **Outbound Voice Profile ID**: pegar la del paso 1
-3. **Probar conexión** (iReparo llama a `/v2/me` con la API key — debe
-   devolver tus datos de cuenta).
-4. **Guardar**.
-5. Después: **Ajustes → Telefonía PSTN → Números → + Añadir**:
-   - **Número**: `+34 873 94 07 02`
-   - **País**: España
-   - **Tipo**: Geográfico
-   - **Etiqueta**: `Recepción Barcelona`
-   - **IVR de entrada**: seleccionar el flujo que quieras que atienda
-   - **Grabación**: ON / OFF
-6. **Guardar**.
+   - **API Key**: pega la del paso 4 (`KEY...`)
+   - **Public Key**: pega la del paso 2 (base64, ~44 caracteres)
+   - **Call Control App ID**: pega la del paso 2 (UUID)
+   - **Outbound Voice Profile ID**: pega la del paso 1 (opcional, solo si
+     vas a usar llamadas salientes / click-to-call)
+2. Pulsa **Probar conexión** → iReparo llama a `/v2/me` con la API key
+   y debe mostrar un toast verde **"Credenciales válidas"**. Si sale
+   rojo, revisa la API Key.
+3. Pulsa **Crear**. La tarjeta muestra ahora el estado de la conexión,
+   la API Key enmascarada (`••••••`), y la fecha de última verificación.
 
-A partir de ese momento, las llamadas a `+34 873 94 07 02` entran a iReparo,
-pasan por el IVR seleccionado y, según las opciones del menú, terminan en
-el navegador de un agente (WebRTC) o en otro destino.
+> Solo puede haber **una conexión Telnyx por organización**. Si quieres
+> rotar la API key, pulsa **Editar** y pega solo la nueva key (los
+> campos vacíos mantienen los valores actuales).
+
+### 6.2 Números (DDI)
+
+Con la conexión creada, aparece debajo la tarjeta de **Números**.
+
+1. Pulsa **Añadir número**. Rellena:
+   - **Etiqueta**: `Recepción Barcelona`
+   - **Número de teléfono**: `+34 873 94 07 02` (se normaliza a E.164
+     automáticamente, acepta espacios, paréntesis y guiones)
+   - **País (ISO)**: `ES`
+   - **Tipo**: `Geográfico` / `Móvil` / `Gratuito (900)` / `Nacional` /
+     `Virtual` — elige el que corresponda
+   - **Flujo IVR entrante**: selecciona un flujo de los que has
+     construido en **Llamadas → Flujos IVR**. Déjalo en "Sin flujo
+     asignado" si quieres rechazar llamadas entrantes en ese número.
+   - **Activo**: ON
+   - **Grabación**: ON / OFF (ver sección 5 sobre aviso legal)
+2. **Crear**.
+
+A partir de este momento, las llamadas al `+34 873 94 07 02` entran a
+iReparo, pasan por el flujo IVR seleccionado y terminan donde lo
+decida el flujo (transferencia a agente, hangup, menu, etc.).
+
+> Puedes tener varios números bajo la misma conexión, cada uno con su
+> propio flujo IVR. Típicamente: uno para recepción, otro para
+> facturación, otro para soporte técnico.
+
+---
+
+## 7. Constructor de flujos IVR
+
+Las llamadas entrantes no llegan "al panel" directamente — pasan por un
+**flujo IVR** que tú construyes visualmente en
+**Llamadas → Flujos IVR** (o **Calling → IVR Flows**).
+
+Cada flujo es un grafo de **nodos** (acciones) conectados por **edges**
+(condiciones). iReparo soporta los mismos 8 tipos de nodo en llamadas
+WhatsApp y Telnyx, con el mismo editor visual.
+
+### 7.1 Tipos de nodo
+
+| Nodo | Qué hace | Salidas (edges) |
+|------|----------|-----------------|
+| **Greeting** | Reproduce un audio (TTS o MP3 subido) | `default` |
+| **Menu** | Reproduce prompt + captura **1 dígito** con validación | `digit:1`, `digit:2`, ..., `timeout`, `max_retries` |
+| **Gather** | Captura **múltiples dígitos** terminados en `#` | `default`, `timeout`, `max_retries` |
+| **HTTP Callback** | Hace una petición HTTP a un servicio externo | `http:2xx`, `http:non2xx` |
+| **Transfer** | Transfiere la llamada a un equipo de agentes | `completed`, `no_answer` |
+| **Goto Flow** | Salta a otro flujo IVR (entry node) | (terminal en este flujo) |
+| **Timing** | Evalúa horario comercial | `in_hours`, `out_of_hours` |
+| **Hangup** | Cuelga la llamada | (terminal) |
+
+### 7.2 Configuración de cada nodo
+
+**Greeting**
+```json
+{
+  "audio_file": "welcome_123.mp3",
+  "interruptible": false
+}
+```
+El admin sube el audio con el botón **Upload audio** del editor o usa
+el generador de TTS integrado. `audio_file` es el filename local
+servido por iReparo; el dispatcher Telnyx lo convierte a una URL firmada
+pública automáticamente (ver sección 8).
+
+**Menu**
+```json
+{
+  "audio_file": "menu_main.mp3",
+  "timeout_seconds": 10,
+  "max_retries": 3,
+  "invalid_audio_url": "https://cdn.tuempresa.es/tono-invalido.mp3",
+  "options": {
+    "1": { "label": "Ventas" },
+    "2": { "label": "Soporte" },
+    "3": { "label": "Facturación" }
+  }
+}
+```
+Cuando el caller pulsa `1`, `2` o `3`, el flujo sale por la edge
+`digit:1` / `digit:2` / `digit:3`. Si no pulsa nada, sale por `timeout`.
+`invalid_audio_url` (opcional, solo Telnyx) es un MP3 que Telnyx
+reproduce si el caller pulsa un dígito no listado.
+
+**Gather**
+```json
+{
+  "audio_file": "pide_dni.mp3",
+  "max_digits": 9,
+  "terminator": "#",
+  "timeout_seconds": 10,
+  "store_as": "dni"
+}
+```
+Guarda los dígitos en la variable `dni` y sigue por la edge `default`.
+La variable está disponible para nodos posteriores (típicamente un
+`http_callback`).
+
+**HTTP Callback**
+```json
+{
+  "url": "https://sat.ireparo.es/api/public/ticket-status?dni={{dni}}",
+  "method": "GET",
+  "headers": {
+    "X-Api-Key": "bearer-xxx"
+  },
+  "body_template": "",
+  "timeout_seconds": 5,
+  "response_store_as": "ticket_status"
+}
+```
+Se interpolan las variables `{{dni}}` con lo recogido en el `gather`
+anterior. La respuesta se guarda (truncada a 1 KB) en `ticket_status`
+para poder interpolarla en un `greeting` posterior. Sale por `http:2xx`
+si el status fue 200-299, `http:non2xx` en cualquier otro caso.
+
+**Transfer**
+```json
+{
+  "team_id": "uuid-del-equipo",
+  "timeout_secs": 120
+}
+```
+Enruta la llamada a los agentes del equipo. El flujo continúa por
+`completed` cuando el transfer acaba, o `no_answer` si nadie contestó.
+
+**Goto Flow**
+```json
+{
+  "flow_id": "uuid-del-flujo-destino"
+}
+```
+Salta al entry node del flujo indicado. Útil para sub-flujos
+compartidos (ej: "horario de atención" reusado en varios números).
+
+**Timing**
+```json
+{
+  "schedule": [
+    { "day": "monday",    "enabled": true,  "start_time": "09:00", "end_time": "18:00" },
+    { "day": "tuesday",   "enabled": true,  "start_time": "09:00", "end_time": "18:00" },
+    { "day": "wednesday", "enabled": true,  "start_time": "09:00", "end_time": "18:00" },
+    { "day": "thursday",  "enabled": true,  "start_time": "09:00", "end_time": "18:00" },
+    { "day": "friday",    "enabled": true,  "start_time": "09:00", "end_time": "15:00" },
+    { "day": "saturday",  "enabled": false, "start_time": "00:00", "end_time": "00:00" },
+    { "day": "sunday",    "enabled": false, "start_time": "00:00", "end_time": "00:00" }
+  ]
+}
+```
+Sale por `in_hours` si la llamada llega dentro del horario del día
+correspondiente; `out_of_hours` en caso contrario. El reloj usa la
+zona horaria del servidor (UTC por defecto — si necesitas Europe/Madrid
+lo puedes cambiar con `TZ=Europe/Madrid` en el compose).
+
+**Hangup**
+```json
+{
+  "audio_file": "despedida.mp3"
+}
+```
+Reproduce el audio (opcional) y cierra la llamada.
+
+### 7.3 Ejemplo de flujo completo
+
+Flujo típico de recepción fuera de horario:
+
+```
+entry
+  │
+  ▼
+[timing]──in_hours──▶ [menu: 1=ventas 2=soporte 3=hablar]
+   │                     │
+   └out_of_hours          ├digit:1─▶ [transfer team=ventas]
+   │                     ├digit:2─▶ [transfer team=soporte]
+   │                     └digit:3─▶ [gather dni] ─▶ [http_callback lookup] ─▶ [transfer team=agentes]
+   ▼
+[greeting: "fuera_horario.mp3"]
+  │
+  ▼
+[hangup]
+```
+
+---
+
+## 8. Audio de IVR: cómo funciona
+
+iReparo almacena los audios localmente (o en S3 si lo configuras) y
+los sirve con dos endpoints:
+
+- `GET /api/ivr-flows/audio/{filename}` — requiere JWT (para preview en
+  el editor).
+- `GET /api/public/ivr-audio/{filename}?e=<expiry>&s=<hmac>` — público
+  pero firmado con HMAC-SHA256 del JWT secret. URL firmada válida
+  durante 15 minutos, generada por el dispatcher Telnyx automáticamente
+  al emitir cada comando de playback / gather.
+
+Esto hace que **no tienes que hospedar los audios tú mismo** — Telnyx
+los fetchea vía la URL firmada que iReparo le pasa en cada
+`gather_using_audio` / `playback_start`.
+
+Si prefieres hospedar los audios tú (en un CDN), puedes rellenar el
+campo `audio_url` del nodo (solo Telnyx lo mira) en vez de usar
+`audio_file`. Por ejemplo en el campo **"Invalid Digit Audio URL"** del
+nodo menu.
+
+---
+
+## 9. Click-to-call desde el panel
+
+Un agente puede marcar a un contacto con un click desde la ficha del
+chat. Usa el **patrón callback** de dos patas — suena primero al
+teléfono del agente, y cuando éste descuelga, Telnyx transfiere la
+llamada al cliente.
+
+### 9.1 Configurar el teléfono del agente
+
+Cada agente **tiene que configurar su teléfono personal** antes de poder
+usar click-to-call:
+
+1. Agente → **Perfil** (menú de usuario → Perfil)
+2. Tarjeta **Teléfono personal (click-to-call)** → introducir en
+   formato internacional: `+34 666 11 22 33`
+3. **Guardar**. Se normaliza a E.164 automáticamente.
+
+Si el teléfono está vacío, el botón "Llamar" aparece deshabilitado con
+tooltip explicativo.
+
+### 9.2 Hacer una llamada
+
+1. En **Chat**, abre la conversación del cliente.
+2. En el panel lateral derecho (ficha de contacto), verás el botón
+   **Llamar** justo debajo del número.
+3. Pulsa. Toast amarillo: "Llamando a tu teléfono — al descolgar,
+   conectaremos con el cliente".
+4. Tu móvil suena desde el número Telnyx de la organización (el
+   primero activo).
+5. Descuelgas → tras 1-2 segundos Telnyx marca al cliente y te conecta.
+
+Todo queda registrado en **Llamadas → Registro de llamadas** como una
+llamada `outgoing` del canal `telnyx_pstn`, con tu UUID en `agent_id`.
+
+> ⚠️ Necesitas que la **Outbound Voice Profile** del paso 1 permita
+> llamar al país del cliente. Si no, verás un error "Telnyx dial
+> failed: ..." al intentar marcar.
+
+---
+
+## 10. Dashboard de analíticas de llamadas
+
+En **Analíticas → Analíticas de llamadas** tienes una vista en tiempo
+real (tras cada refresh) con:
+
+- **4 KPIs principales**: total, contestadas (+%), perdidas (+%),
+  duración media
+- **KPIs secundarios**: entrantes/salientes, tiempo total en llamada,
+  rango efectivo
+- **Gráficas**:
+  - Tendencia diaria (total / contestadas / perdidas)
+  - Distribución horaria 24h (útil para planificar turnos)
+  - Desglose por estado (donut)
+  - Desglose por canal WhatsApp vs Telnyx (donut)
+  - Top 10 flujos IVR por volumen
+  - Top 10 agentes por llamadas atendidas
+
+Filtros:
+- **Canal**: Todos / WhatsApp / Telnyx PSTN
+- **Dirección**: Todas / Entrantes / Salientes
+- **Rango de fechas**: presets (hoy, 7 días, 30 días, este mes) o
+  personalizado
+
+Permiso necesario: `call_logs:read` (el mismo que para ver el listado
+de llamadas).
+
+---
+
+## 11. Cola CRM (admin dead-letter queue)
+
+Si tienes configurada la integración con un CRM externo, los eventos de
+llamadas / mensajes se envían con reintentos exponenciales. Los que
+exceden 10 intentos aterrizan en la cola dead-letter.
+
+Para gestionarla: **Ajustes → Cola CRM**.
+
+- **Filtros** por estado con contadores: Fallidos / Pendientes /
+  Entregados / Todos
+- **Ver payload** (icono del ojo) → muestra el JSON del evento y el
+  último error
+- **Reintentar** (icono play) → resetea intentos a 0 y hace un envío
+  inmediato. Si falla, el worker lo reintenta con el backoff normal
+- **Eliminar** (icono papelera) → borra permanentemente
+
+Permiso necesario: `settings.general:read/write/delete`.
 
 ---
 
@@ -235,10 +520,14 @@ el navegador de un agente (WebRTC) o en otro destino.
   URL no está bien. Si hay 200, llega.
 
 ### Las llamadas entrantes ring pero no pasa nada en iReparo
-- **Hasta Phase 2.2 esto es lo esperado.** Phase 2.1 solo loga el
-  evento. La lógica de IVR / dispatch llega en el siguiente commit.
 - Verifica que el log muestra `Telnyx webhook event event_type=call.initiated`
-  cuando llamas. Si no, el problema está en Telnyx side.
+  cuando llamas. Si no, el problema está en Telnyx side (webhook mal
+  configurado).
+- Verifica que el número tiene un **flujo IVR asignado** en **Ajustes →
+  Telefonía PSTN → Números**. Sin flujo, la llamada se cuelga
+  inmediatamente.
+- Verifica que el flujo IVR está **Activo** (`is_active=true`). Flujos
+  inactivos son ignorados.
 
 ### "Invalid signature" en los logs
 - La Public Key copiada está mal o le faltan caracteres. Vuelve al paso 2
@@ -253,8 +542,43 @@ el navegador de un agente (WebRTC) o en otro destino.
   Profile**.
 
 ### El agente no oye nada cuando contesta una llamada Telnyx
-- **Hasta Phase 2.2 esto es lo esperado.** El bridge WebRTC entre el
-  navegador del agente y la pata Telnyx llega en el commit siguiente.
+
+El patrón actual (Phase 2.6) no usa WebRTC para llamadas Telnyx; usa el
+**modelo callback**:
+- **Entrantes** → enrutadas por IVR, que al llegar a un nodo `transfer`
+  llama al móvil del agente (si tiene teléfono configurado).
+- **Salientes (click-to-call)** → Telnyx marca al agente primero,
+  luego transfiere al cliente.
+
+Si el agente no oye audio:
+- Verifica que el agente tiene **teléfono personal configurado** en su
+  Perfil.
+- Verifica que el teléfono está encendido y no tiene el número
+  bloqueado.
+- Comprueba que la Outbound Voice Profile permite llamar al país del
+  agente (por si el agente está en otro país que el cliente).
+
+### "Failed to dial" al hacer click-to-call
+- El agente no tiene `phone_number` configurado → mensaje explícito.
+- No hay ningún `TelnyxNumber` activo en la organización → añade uno
+  en **Ajustes → Telefonía PSTN**.
+- Telnyx rechaza la llamada: suele ser la **Outbound Voice Profile** —
+  revisa que el país del agente está marcado como permitido.
+- **Daily spend limit** alcanzado: sube el límite en Telnyx o espera
+  al reset a medianoche UTC.
+
+### El audio del IVR no se escucha en llamadas Telnyx
+- Verifica que el nodo tiene `audio_file` configurado (el dispatcher
+  construye la URL firmada automáticamente).
+- Mira el log — `Playback failed: invalid audio URL` indica que el
+  firmado falla. Suele ser un reloj desincronizado o el JWT secret
+  distinto entre el handler y el dispatcher (típicamente no pasa, pero
+  si clonas el binario entre máquinas sin copiar `config.toml` sí).
+- Prueba directamente la URL firmada con `curl` desde el VPS:
+  ```bash
+  curl -v "https://pbx.ireparo.es/api/public/ivr-audio/welcome.mp3?e=<exp>&s=<sig>"
+  ```
+  Debe devolver el MP3 con 200.
 
 ---
 
@@ -277,11 +601,29 @@ de proyectar costes — Telnyx revisa tarifas un par de veces al año.
 
 ---
 
-## Siguiente fase
+## Estado de la integración
 
-Phase 2.2 añadirá:
-- Lógica completa del webhook handler (crear `CallLog`, ejecutar IVR, etc.)
-- UI de configuración en Ajustes → Telefonía PSTN
-- Bridge WebRTC entre el navegador del agente y la pata Telnyx
-- Click-to-call desde la ficha de contacto
-- Descarga automática de grabaciones a `/app/uploads/recordings/`
+| Fase | Descripción | Estado |
+|------|-------------|--------|
+| 2.1 | Modelos + cliente API + webhook stub | ✅ |
+| 2.2 | Dispatcher + IVR + descarga de grabaciones | ✅ |
+| 2.3 | Nodos IVR extendidos (`menu`, `gather`, `http_callback`, `goto_flow`, `timing`) | ✅ |
+| 2.4 | UI de admin Telnyx (conexión + números) | ✅ |
+| 2.5 | Bridge de audio entre canales WhatsApp y Telnyx (URL firmada) | ✅ |
+| 2.6 | Click-to-call (patrón callback) | ✅ |
+| 2.7 | Dashboard de analíticas de llamadas | ✅ |
+| 3.1 A | PBX → CRM (lookup + eventos de llamada) | ✅ |
+| 3.1 B | Spec de integración CRM + plantillas Laravel | ✅ |
+| 3.2 | Eventos de mensajes + admin cola dead-letter | ✅ |
+
+## Posibles siguientes pasos
+
+- **Outbound con WebRTC** — reemplazar el callback por un bridge WebRTC
+  directo agent-browser ↔ Telnyx (requiere infra adicional).
+- **SMS via Telnyx** — el cliente y la cuenta ya están; añadir modelo
+  `TelnyxMessage` + handlers + UI.
+- **Campañas outbound** — bulk dial con throttling y estadísticas.
+- **Transcripción automática** — Whisper local o API, integrado con el
+  pipeline de grabaciones.
+- **Per-user default outbound number** — actualmente el sistema usa el
+  primer TelnyxNumber activo; podría elegirlo cada agente.

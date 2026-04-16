@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +182,3 @@ func TestClient_RespectsTimeout(t *testing.T) {
 		t.Error("expected timeout error")
 	}
 }
-
-// helper used in cases where the test asserts on a numeric body field
-func mustItoa(n int) string { return strconv.Itoa(n) }

@@ -40,8 +40,6 @@ func NormalizePhone(phone string) string {
 		}
 	}
 	out := b.String()
-	if strings.HasPrefix(out, "00") {
-		out = out[2:]
-	}
+	out = strings.TrimPrefix(out, "00")
 	return out
 }

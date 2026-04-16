@@ -326,6 +326,13 @@ const greetingTab = computed(() =>
           </Button>
         </div>
       </div>
+      <!-- Invalid audio URL (external hosted MP3/WAV, used by Telnyx only).
+           When a caller presses an unlisted digit, Telnyx plays this prompt
+           before re-prompting. Leave empty to silently re-prompt. -->
+      <div class="space-y-1.5">
+        <Label class="text-xs">Invalid Digit Audio URL <span class="text-muted-foreground">(optional, Telnyx only)</span></Label>
+        <Input :model-value="config.invalid_audio_url || ''" @update:model-value="(v: string) => updateConfig('invalid_audio_url', v)" placeholder="https://example.com/invalid.mp3" class="h-8 text-sm" />
+      </div>
     </template>
 
     <!-- Gather: config -->

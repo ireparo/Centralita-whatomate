@@ -98,7 +98,23 @@ import { useNotesStore } from '@/stores/notes'
 import { useHeaderMedia } from '@/composables/useHeaderMedia'
 import { CreateContactDialog } from '@/components/shared'
 import HeaderMediaUpload from '@/components/shared/HeaderMediaUpload.vue'
-import { Info } from 'lucide-vue-next'
+import WhatsmeowGroupDialog from '@/components/chat/WhatsmeowGroupDialog.vue'
+import WhatsmeowCreateGroupDialog from '@/components/chat/WhatsmeowCreateGroupDialog.vue'
+import { Info, Users } from 'lucide-vue-next'
+
+// Phase W.5 — group management dialog is opened from the "Group"
+// badge click in the chat header when the current contact is a group.
+const groupDialogOpen = ref(false)
+
+// Phase W.6 — create-group dialog is opened from the sidebar "Users"
+// icon. Emits the new contact id on success so we can jump to it.
+const createGroupDialogOpen = ref(false)
+function onGroupCreated(contactId: string) {
+  // Force-refresh the contacts list so the new group shows up in the
+  // sidebar without a manual reload.
+  void contactsStore.fetchContacts?.()
+  void contactId
+}
 
 const { t } = useI18n()
 const route = useRoute()
@@ -115,6 +131,70 @@ const canWriteContacts = authStore.hasPermission('contacts', 'write')
 
 const messageInput = ref('')
 const messagesEndRef = ref<HTMLElement | null>(null)
+
+// --- Typing indicator (Phase W.3) ---------------------------------------
+//
+// Bidirectional typing dots. The incoming direction (remote composing)
+// comes through a WebSocket message dispatched by the useTypingIndicator
+// composable. The outgoing direction (this agent composing) fires a
+// debounced POST to /api/contacts/{id}/whatsmeow/typing — which is a
+// no-op for Cloud API accounts, so we can call it unconditionally.
+import { isTyping as isContactTypingFn } from '@/composables/useTypingIndicator'
+import { api as apiClient } from '@/services/api'
+
+const isContactTyping = computed(() =>
+  isContactTypingFn(contactsStore.currentContact?.id)
+)
+
+// Track whether we've recently told the backend "agent typing" so we do
+// not spam the endpoint on every keystroke. One start + one stop per
+// burst of typing is enough for the WhatsApp UI.
+const typingSendLock = { sent: false, stopTimer: null as ReturnType<typeof setTimeout> | null }
+
+function scheduleTypingStop() {
+  if (typingSendLock.stopTimer) clearTimeout(typingSendLock.stopTimer)
+  typingSendLock.stopTimer = setTimeout(() => {
+    sendTypingState(false)
+  }, 6000) // pause after 6 s of inactivity
+}
+
+async function sendTypingState(isTyping: boolean) {
+  const cid = contactsStore.currentContact?.id
+  if (!cid) return
+  try {
+    await apiClient.post(`/contacts/${cid}/whatsmeow/typing`, { is_typing: isTyping })
+  } catch {
+    // advisory UX — swallow failures silently
+  }
+}
+
+watch(messageInput, (next, prev) => {
+  if (!contactsStore.currentContact) return
+  const nowTyping = next.trim().length > 0
+  const wasTyping = (prev || '').trim().length > 0
+  if (nowTyping && !typingSendLock.sent) {
+    typingSendLock.sent = true
+    sendTypingState(true)
+    scheduleTypingStop()
+  } else if (nowTyping && typingSendLock.sent) {
+    scheduleTypingStop()
+  } else if (!nowTyping && wasTyping && typingSendLock.sent) {
+    typingSendLock.sent = false
+    if (typingSendLock.stopTimer) clearTimeout(typingSendLock.stopTimer)
+    sendTypingState(false)
+  }
+})
+
+// When the agent navigates away from the chat, stop the indicator on
+// the remote end so the customer does not see a stale "typing…" forever.
+watch(() => contactsStore.currentContact?.id, (newId, oldId) => {
+  if (oldId && typingSendLock.sent) {
+    typingSendLock.sent = false
+    if (typingSendLock.stopTimer) clearTimeout(typingSendLock.stopTimer)
+    // Best-effort stop for the previous contact — not awaited.
+    apiClient.post(`/contacts/${oldId}/whatsmeow/typing`, { is_typing: false }).catch(() => {})
+  }
+})
 const messageInputRef = ref<HTMLTextAreaElement | null>(null)
 const isSending = ref(false)
 const isAssignDialogOpen = ref(false)
@@ -1398,6 +1478,22 @@ async function sendMediaMessage() {
             </TooltipTrigger>
             <TooltipContent>{{ $t('chat.addContact') }}</TooltipContent>
           </Tooltip>
+          <!-- New WhatsApp group (whatsmeow only). Shown alongside
+               Add-contact for org admins — non-whatsmeow deployments
+               simply see the disabled empty state inside the dialog. -->
+          <Tooltip v-if="canWriteContacts">
+            <TooltipTrigger as-child>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-8 w-8 shrink-0 text-white/40 hover:text-white hover:bg-white/[0.08] light:text-gray-500 light:hover:text-gray-900 light:hover:bg-gray-100"
+                @click="createGroupDialogOpen = true"
+              >
+                <Users class="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{{ $t('whatsmeowCreateGroup.title') }}</TooltipContent>
+          </Tooltip>
           <!-- Tag Filter -->
           <Popover v-model:open="isTagFilterOpen">
             <PopoverTrigger as-child>
@@ -1547,8 +1643,22 @@ async function sendMediaMessage() {
             <div>
               <div class="flex items-center gap-1.5">
                 <p class="text-sm font-medium text-white light:text-gray-900">
-                  {{ contactsStore.currentContact.name || contactsStore.currentContact.phone_number }}
+                  {{ contactsStore.currentContact.group_subject || contactsStore.currentContact.name || contactsStore.currentContact.phone_number }}
                 </p>
+                <!-- Group badge: lets the agent tell at a glance that
+                     this conversation is a WhatsApp group and every
+                     message has a sender attribution rendered above it.
+                     Clickable — opens the group admin dialog (Phase W.5). -->
+                <button
+                  v-if="contactsStore.currentContact?.is_group"
+                  type="button"
+                  class="inline-flex items-center gap-1 rounded text-[10px] h-5 px-1.5 bg-indigo-500/20 text-indigo-400 light:bg-indigo-100 light:text-indigo-700 hover:bg-indigo-500/30 light:hover:bg-indigo-200 transition-colors"
+                  :title="$t('whatsmeowGroup.manage', 'Manage group')"
+                  @click="groupDialogOpen = true"
+                >
+                  <Users class="h-3 w-3" />
+                  {{ $t('chat.group', 'Group') }}
+                </button>
                 <Badge v-if="activeTransferId" class="text-[10px] h-5 bg-orange-500/20 text-orange-400 light:bg-orange-100 light:text-orange-700">
                   Paused
                 </Badge>
@@ -1556,8 +1666,22 @@ async function sendMediaMessage() {
                   {{ $t('chat.marketingOptOut', 'Marketing Opt-out') }}
                 </Badge>
               </div>
-              <p class="text-[11px] text-white/50 light:text-gray-500">
-                {{ contactsStore.currentContact.phone_number }}
+              <p class="text-[11px] text-white/50 light:text-gray-500 flex items-center gap-1.5">
+                <span>{{ contactsStore.currentContact.phone_number }}</span>
+                <!-- Typing indicator: three animated dots shown while
+                     the remote end is composing. Currently only emitted
+                     by whatsmeow-provider accounts (Cloud API has no
+                     typing webhook). -->
+                <span
+                  v-if="isContactTyping"
+                  class="inline-flex items-center gap-0.5 text-emerald-400 light:text-emerald-600 ml-1"
+                  aria-live="polite"
+                >
+                  <span class="h-1 w-1 rounded-full bg-current animate-bounce" style="animation-delay: 0s"></span>
+                  <span class="h-1 w-1 rounded-full bg-current animate-bounce" style="animation-delay: 0.15s"></span>
+                  <span class="h-1 w-1 rounded-full bg-current animate-bounce" style="animation-delay: 0.3s"></span>
+                  <span class="ml-1">{{ $t('chat.typing', 'typing…') }}</span>
+                </span>
               </p>
             </div>
           </div>
@@ -1740,6 +1864,19 @@ async function sendMediaMessage() {
                   message.direction === 'outgoing' ? 'chat-bubble-outgoing' : 'chat-bubble-incoming'
                 ]"
               >
+                <!-- Group sender header (Phase W.4). Renders above the
+                     message body so agents can tell which participant
+                     in the group is speaking. Only shown for incoming
+                     messages in group conversations (outgoing messages
+                     are always the agent, identified via SentByUser
+                     elsewhere). -->
+                <p
+                  v-if="contactsStore.currentContact?.is_group && message.direction === 'incoming' && (message.sender_name || message.sender_phone)"
+                  class="text-[11px] font-semibold text-indigo-500 light:text-indigo-600 mb-0.5"
+                >
+                  {{ message.sender_name || message.sender_phone }}
+                </p>
+
                 <!-- Reply preview (if this message is replying to another) -->
                 <div
                   v-if="message.is_reply && message.reply_to_message"
@@ -2426,6 +2563,23 @@ async function sendMediaMessage() {
 
     <!-- Add Contact Dialog -->
     <CreateContactDialog v-model:open="isAddContactOpen" @created="onContactCreated" />
+
+    <!-- WhatsApp group admin (Phase W.5). Mounted once, shown only
+         for group contacts via the "Group" badge click. -->
+    <WhatsmeowGroupDialog
+      v-if="contactsStore.currentContact?.is_group"
+      :contact-id="contactsStore.currentContact.id"
+      v-model:open="groupDialogOpen"
+      @subject-changed="(s: string) => { if (contactsStore.currentContact) contactsStore.currentContact.group_subject = s }"
+      @left="() => { groupDialogOpen = false }"
+    />
+
+    <!-- Create group dialog (Phase W.6). Mounted once; always available
+         from the sidebar button regardless of the current contact. -->
+    <WhatsmeowCreateGroupDialog
+      v-model:open="createGroupDialogOpen"
+      @created="onGroupCreated"
+    />
   </div>
 </template>
 

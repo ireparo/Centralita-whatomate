@@ -107,7 +107,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any)
 	if err != nil {
 		return fmt.Errorf("telnyx: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -289,6 +289,30 @@ type GatherRequest struct {
 func (c *Client) Gather(ctx context.Context, callControlID string, req *GatherRequest) error {
 	return c.do(ctx, http.MethodPost,
 		fmt.Sprintf("/calls/%s/actions/gather", callControlID),
+		req, nil)
+}
+
+// GatherUsingAudioRequest plays an audio prompt and gathers DTMF input in a
+// single action. This is the canonical Telnyx pattern for an IVR menu — it
+// is atomic (playback + gather in one command) and interruptible (caller
+// pressing a digit stops the audio and the digit counts towards the gather).
+type GatherUsingAudioRequest struct {
+	AudioURL         string `json:"audio_url"`
+	MinDigits        int    `json:"minimum_digits,omitempty"`
+	MaxDigits        int    `json:"maximum_digits,omitempty"`
+	TerminatingDigit string `json:"terminating_digit,omitempty"`
+	TimeoutMillis    int    `json:"timeout_millis,omitempty"`
+	ValidDigits      string `json:"valid_digits,omitempty"`
+	InvalidAudioURL  string `json:"invalid_audio_url,omitempty"`
+	ClientState      string `json:"client_state,omitempty"`
+}
+
+// GatherUsingAudio plays an audio file and gathers DTMF input in one action.
+// Telnyx emits a call.gather.ended event when the caller finishes (or times
+// out), carrying the digits they pressed and an echo of ClientState.
+func (c *Client) GatherUsingAudio(ctx context.Context, callControlID string, req *GatherUsingAudioRequest) error {
+	return c.do(ctx, http.MethodPost,
+		fmt.Sprintf("/calls/%s/actions/gather_using_audio", callControlID),
 		req, nil)
 }
 

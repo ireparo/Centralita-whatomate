@@ -120,6 +120,14 @@ type User struct {
 	SSOProvider   string `gorm:"size:50" json:"sso_provider,omitempty"`     // google, microsoft, github, facebook, custom
 	SSOProviderID string `gorm:"size:255" json:"sso_provider_id,omitempty"` // External user ID from provider
 
+	// PhoneNumber is the agent's own phone (E.164 without the leading "+").
+	// Used by the Telnyx click-to-call callback flow: when an agent clicks
+	// "Call" on a contact, Telnyx dials THIS number first; once the agent
+	// picks up, Telnyx transfers the leg to the customer. Optional — if
+	// empty, click-to-call falls back to whatever the org configured (or
+	// refuses the request).
+	PhoneNumber string `gorm:"size:32" json:"phone_number,omitempty"`
+
 	// Relations
 	Organization      *Organization      `gorm:"foreignKey:OrganizationID" json:"organization,omitempty"`
 	Role              *CustomRole        `gorm:"foreignKey:RoleID" json:"role,omitempty"`
@@ -294,6 +302,21 @@ type WhatsAppAccount struct {
 	BaseModel
 	OrganizationID     uuid.UUID  `gorm:"type:uuid;index;not null" json:"organization_id"`
 	Name               string     `gorm:"size:100;uniqueIndex:idx_wa_org_name;not null" json:"name"` // Unique per org, used as reference
+
+	// Provider selects which WhatsApp transport this account uses:
+	//   - "cloud_api" (default) — Meta's official WhatsApp Cloud API. Uses
+	//     AppID / PhoneID / BusinessID / AccessToken / webhook verify.
+	//   - "whatsmeow"             — reverse-engineered WhatsApp Web protocol
+	//     via the go.mau.fi/whatsmeow library. Uses QR pairing stored in
+	//     the whatsmeow_device table; the Meta-specific columns (AppID,
+	//     PhoneID, AccessToken, etc.) are unused for these accounts.
+	//
+	// VIOLATES WhatsApp Terms of Service when provider=whatsmeow. Numbers
+	// can be banned at Meta's discretion — intended for cases where the
+	// Cloud API is unavailable or uneconomical, with a user-facing
+	// disclaimer in the UI.
+	Provider string `gorm:"size:20;not null;default:'cloud_api'" json:"provider"`
+
 	AppID              string     `gorm:"size:100" json:"app_id"`                                    // Meta App ID
 	PhoneID            string     `gorm:"size:100;not null" json:"phone_id"`
 	BusinessID         string     `gorm:"size:100;not null" json:"business_id"`
@@ -305,6 +328,11 @@ type WhatsAppAccount struct {
 	IsDefaultOutgoing  bool       `gorm:"default:false" json:"is_default_outgoing"`
 	AutoReadReceipt    bool       `gorm:"default:false" json:"auto_read_receipt"`
 	Status             string     `gorm:"size:20;default:'active'" json:"status"`
+
+	// WhatsmeowJID is the WhatsApp JID of the paired device, only set for
+	// accounts with provider="whatsmeow". Format is "<phone>:<device>@s.whatsapp.net".
+	WhatsmeowJID string `gorm:"size:64;index" json:"whatsmeow_jid,omitempty"`
+
 	CreatedByID        *uuid.UUID `gorm:"type:uuid" json:"created_by_id,omitempty"`
 	UpdatedByID        *uuid.UUID `gorm:"type:uuid" json:"updated_by_id,omitempty"`
 
@@ -362,6 +390,23 @@ type Contact struct {
 	// matching record in the CRM (unknown callers, prospects, spam, etc.).
 	ExternalCRMID *int64 `gorm:"column:external_crm_id;index" json:"external_crm_id,omitempty"`
 
+	// WhatsApp group fields (Phase W.4, whatsmeow only).
+	//
+	// When IsGroup is true this Contact row represents a WhatsApp group
+	// rather than a single person. The "phone_number" column is repurposed
+	// to store the group JID (without the @g.us suffix) because the chat
+	// pipeline keys off phone_number everywhere — reusing it avoids a
+	// full pass through the codebase. GroupJID mirrors that value with the
+	// full JID including the suffix, for whatsmeow calls that need it raw.
+	//
+	// Group messages always land on the group Contact, with Message.SenderPhone
+	// / SenderName identifying the participant who actually sent them.
+	// Cloud API accounts cannot produce groups (Meta does not expose them
+	// via the Business API), so these fields are always zero for those.
+	IsGroup      bool   `gorm:"default:false;index" json:"is_group"`
+	GroupJID     string `gorm:"size:100;index" json:"group_jid,omitempty"`
+	GroupSubject string `gorm:"size:255" json:"group_subject,omitempty"`
+
 	// Chatbot SLA tracking
 	ChatbotLastMessageAt *time.Time `json:"chatbot_last_message_at,omitempty"` // When chatbot last sent a message
 	ChatbotReminderSent  bool       `gorm:"default:false" json:"chatbot_reminder_sent"`
@@ -397,6 +442,15 @@ type Message struct {
 	Status            MessageStatus `gorm:"size:20;default:'pending'" json:"status"`
 	ErrorMessage      string     `gorm:"type:text" json:"error_message"`
 	IsReply           bool       `gorm:"default:false" json:"is_reply"`
+
+	// Group participant attribution (Phase W.4, whatsmeow only).
+	//
+	// For messages in WhatsApp groups we keep SenderPhone + SenderName
+	// alongside the message itself so the agent panel can render "Alice:
+	// Hola!" style prefixes without joining to a separate participants
+	// table on every query. Zero for 1:1 conversations.
+	SenderPhone string `gorm:"size:50;index" json:"sender_phone,omitempty"`
+	SenderName  string `gorm:"size:255" json:"sender_name,omitempty"`
 	ReplyToMessageID  *uuid.UUID `gorm:"type:uuid" json:"reply_to_message_id,omitempty"`
 	SentByUserID      *uuid.UUID `gorm:"type:uuid;index" json:"sent_by_user_id,omitempty"` // User who sent outgoing message
 	Metadata          JSONB      `gorm:"type:jsonb;default:'{}'" json:"metadata"`

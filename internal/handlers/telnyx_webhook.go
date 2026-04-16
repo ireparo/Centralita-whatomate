@@ -90,9 +90,24 @@ func (a *App) TelnyxWebhookHandler(r *fastglue.Request) error {
 
 	// Build the dependency bundle the dispatcher functions need.
 	tnxClient := telnyx.NewClient(connection.APIKey, a.HTTPClient)
+
+	// Derive the publicly reachable base URL from this incoming webhook
+	// request. Telnyx is POSTing to the Host it was configured with, so
+	// reusing it guarantees the signed audio URLs we hand back to Telnyx
+	// resolve to the same instance it already knows about.
+	scheme := "https"
+	if !r.RequestCtx.IsTLS() && string(r.RequestCtx.Request.Header.Peek("X-Forwarded-Proto")) != "https" {
+		scheme = "http"
+	}
+	host := string(r.RequestCtx.Host())
+	baseURL := scheme + "://" + host
+
 	deps := &calling.TelnyxIVRDeps{
 		DB:     a.DB,
 		Telnyx: tnxClient,
+		AudioURLResolver: func(filename string) string {
+			return a.BuildSignedIVRAudioURL(baseURL, filename)
+		},
 	}
 
 	// Dispatch by event type. We log the dispatch error but always 200
@@ -126,9 +141,19 @@ func (a *App) dispatchTelnyxEvent(
 	// ---- Inbound call lifecycle ---------------------------------------
 
 	case telnyx.EventCallInitiated:
+		// For click-to-call (outbound) flows, we already created the
+		// CallLog at Dial time. Skip the inbound-style handler for these.
+		if state, _ := DecodeClickToCallState(payload.ClientState); state != nil {
+			return nil
+		}
 		return a.handleTelnyxCallInitiated(ctx, deps, connection, payload)
 
 	case telnyx.EventCallAnswered:
+		// Click-to-call: the agent leg just answered. Trigger the Transfer
+		// to the customer instead of treating it as an IVR answer.
+		if handled, err := a.handleClickToCallAgentAnswered(ctx, connection, payload.CallControlID, payload.ClientState); handled {
+			return err
+		}
 		return a.handleTelnyxCallAnswered(ctx, deps, connection, payload)
 
 	// ---- IVR continuation ---------------------------------------------
@@ -137,17 +162,16 @@ func (a *App) dispatchTelnyxEvent(
 		return calling.AdvanceTelnyxIVR(ctx, deps, payload.CallControlID, payload.ClientState, "default")
 
 	case telnyx.EventGatherEnded:
-		// Decode the digits from the payload to know which edge to take.
+		// Decode the digits from the payload. The continuation routes
+		// differently depending on whether the current node is a `menu`
+		// (digit: edge) or a `gather` (default edge + variable storage),
+		// so we hand off to the specialized AdvanceTelnyxIVRAfterGather.
 		var gatherPayload struct {
 			Digits string `json:"digits"`
 			Status string `json:"status"`
 		}
 		_ = json.Unmarshal(env.Data.Payload, &gatherPayload)
-		outcome := "timeout"
-		if gatherPayload.Digits != "" {
-			outcome = "digit:" + gatherPayload.Digits
-		}
-		return calling.AdvanceTelnyxIVR(ctx, deps, payload.CallControlID, payload.ClientState, outcome)
+		return calling.AdvanceTelnyxIVRAfterGather(ctx, deps, payload.CallControlID, payload.ClientState, gatherPayload.Digits)
 
 	// ---- Transfer / bridge --------------------------------------------
 
@@ -161,6 +185,10 @@ func (a *App) dispatchTelnyxEvent(
 	case telnyx.EventCallHangup:
 		hangup, err := telnyx.ParseHangupPayload(env)
 		if err != nil {
+			return err
+		}
+		// Click-to-call: finalize the CallLog row we created at Dial time.
+		if handled, err := a.handleClickToCallHangup(ctx, connection, hangup.ClientState, hangup.HangupCause, hangup.HangupSource); handled {
 			return err
 		}
 		return a.handleTelnyxHangup(ctx, connection, hangup)

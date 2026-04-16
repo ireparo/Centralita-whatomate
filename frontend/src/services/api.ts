@@ -399,6 +399,180 @@ export const agentAnalyticsService = {
     api.get('/analytics/agents', { params })
 }
 
+// Call Analytics (Phase 2.7): aggregates over the CallLog table.
+export interface CallAnalyticsSummary {
+  total_calls: number
+  answered_calls: number
+  missed_calls: number
+  outgoing_calls: number
+  incoming_calls: number
+  answered_rate: number
+  missed_rate: number
+  avg_duration_secs: number
+  total_duration_secs: number
+}
+
+export interface CallDailyTrendPoint {
+  date: string
+  total: number
+  answered: number
+  missed: number
+  avg_duration_secs: number
+}
+
+export interface CallHourlyBucket {
+  hour: number
+  total: number
+}
+
+export interface CallStatusBucket {
+  status: string
+  count: number
+}
+
+export interface CallChannelBucket {
+  channel: string
+  count: number
+}
+
+export interface CallIVRFlowBucket {
+  flow_id: string
+  flow_name: string
+  count: number
+}
+
+export interface CallAgentBucket {
+  agent_id: string
+  agent_name: string
+  handled: number
+  avg_duration_secs: number
+  total_duration_secs: number
+}
+
+export interface CallAnalyticsResponse {
+  summary: CallAnalyticsSummary
+  daily_trend: CallDailyTrendPoint[]
+  hourly_distribution: CallHourlyBucket[]
+  status_breakdown: CallStatusBucket[]
+  channel_breakdown: CallChannelBucket[]
+  top_ivr_flows: CallIVRFlowBucket[]
+  top_agents: CallAgentBucket[]
+  range: {
+    start_date: string
+    end_date: string
+    channel?: string
+    direction?: string
+  }
+}
+
+export const callAnalyticsService = {
+  get: (params?: {
+    start_date?: string
+    end_date?: string
+    channel?: string
+    direction?: string
+  }) => api.get<CallAnalyticsResponse>('/analytics/calls', { params }),
+}
+
+// ---- Whatsmeow (unofficial WhatsApp Web protocol provider) --------------
+//
+// VIOLATES WhatsApp ToS. Use only with user-facing disclaimer. The
+// official Cloud API remains the default provider.
+
+export type WhatsmeowState =
+  | 'initialized'
+  | 'connecting'
+  | 'waiting_qr'
+  | 'logged_in'
+  | 'logged_out'
+  | 'error'
+
+export interface WhatsmeowStatus {
+  state: WhatsmeowState
+  paired: boolean
+  jid?: string
+  last_error?: string
+}
+
+export interface WhatsmeowConnectResponse {
+  account_id: string
+  state: WhatsmeowState
+  paired: boolean
+  needs_qr: boolean
+}
+
+export const whatsmeowService = {
+  status: (accountId: string) =>
+    api.get<WhatsmeowStatus>(`/accounts/${accountId}/whatsmeow/status`),
+  connect: (accountId: string) =>
+    api.post<WhatsmeowConnectResponse>(`/accounts/${accountId}/whatsmeow/connect`),
+  disconnect: (accountId: string) =>
+    api.post<{ status: string }>(`/accounts/${accountId}/whatsmeow/disconnect`),
+  logout: (accountId: string) =>
+    api.post<{ status: string }>(`/accounts/${accountId}/whatsmeow/logout`),
+  /**
+   * Build the absolute WebSocket URL for the QR stream. Consumer must
+   * attach the JWT via a first `{"type":"auth","payload":{"token":...}}`
+   * message, then receive `{type:"qr"|"state"|"error", payload:string}`
+   * messages until the socket closes on pair success / timeout.
+   */
+  qrWebSocketURL(accountId: string): string {
+    const base = api.defaults.baseURL || ''
+    // Strip the /api prefix so we hit the bare /ws/... path.
+    const origin = base.replace(/\/api\/?$/, '')
+    const wsOrigin = origin.replace(/^http/, 'ws')
+    return `${wsOrigin}/ws/whatsmeow/${accountId}`
+  },
+}
+
+// Phase W.5: WhatsApp group management via whatsmeow.
+export interface WhatsmeowGroupParticipant {
+  phone: string
+  display_name?: string
+  is_admin: boolean
+  is_super_admin: boolean
+}
+
+export interface WhatsmeowGroupInfo {
+  jid: string
+  subject: string
+  description?: string
+  owner_phone?: string
+  created_at?: string
+  participants: WhatsmeowGroupParticipant[]
+}
+
+export type WhatsmeowParticipantAction = 'add' | 'remove' | 'promote' | 'demote'
+
+export const whatsmeowGroupService = {
+  create: (accountId: string, subject: string, participantPhones: string[]) =>
+    api.post<{ group: WhatsmeowGroupInfo; contact_id: string }>(
+      `/accounts/${accountId}/whatsmeow/groups`,
+      { subject, participant_phones: participantPhones }
+    ),
+  info: (contactId: string) =>
+    api.get<WhatsmeowGroupInfo>(`/contacts/${contactId}/whatsmeow/group`),
+  updateParticipants: (
+    contactId: string,
+    action: WhatsmeowParticipantAction,
+    phones: string[]
+  ) =>
+    api.post<{ action: string; accepted: string[] }>(
+      `/contacts/${contactId}/whatsmeow/group/participants`,
+      { action, phones }
+    ),
+  setSubject: (contactId: string, subject: string) =>
+    api.put<{ subject: string }>(`/contacts/${contactId}/whatsmeow/group/subject`, {
+      subject,
+    }),
+  setDescription: (contactId: string, description: string) =>
+    api.put<{ description: string }>(`/contacts/${contactId}/whatsmeow/group/description`, {
+      description,
+    }),
+  leave: (contactId: string) =>
+    api.post<{ status: string }>(`/contacts/${contactId}/whatsmeow/group/leave`),
+}
+
 // Meta WhatsApp Analytics Types
 export type MetaAnalyticsType =
   | 'analytics'
@@ -1129,6 +1303,160 @@ export const ivrFlowsService = {
     })
   },
   getAudioUrl: (filename: string) => `${api.defaults.baseURL}/ivr-flows/audio/${encodeURIComponent(filename)}`
+}
+
+// CRM dead-letter queue (Phase 3.2)
+//
+// The PBX emits signed CRM events asynchronously; on delivery failure they
+// are persisted to crm_event_queue with an exponential-backoff retry loop.
+// Events that exceed MaxAttempts land in the dead_letter status and require
+// operator intervention — this service powers the admin UI for that.
+
+export interface CrmQueueRow {
+  id: string
+  event_type: string
+  endpoint: string
+  status: 'pending' | 'delivered' | 'dead_letter'
+  attempt_count: number
+  next_attempt_at?: string
+  last_error?: string
+  delivered_at?: string
+  created_at: string
+  payload_preview: string
+}
+
+export interface CrmQueueListResponse {
+  rows: CrmQueueRow[]
+  total: number
+  pending: number
+  dead_letter: number
+  delivered: number
+}
+
+export const crmQueueService = {
+  list: (params?: { status?: string; limit?: number; offset?: number }) =>
+    api.get<CrmQueueListResponse>('/admin/crm-queue', { params }),
+  replay: (id: string) =>
+    api.post<{ status: string }>(`/admin/crm-queue/${id}/replay`),
+  delete: (id: string) => api.delete(`/admin/crm-queue/${id}`),
+}
+
+// Telnyx PSTN settings (Phase 2.4 UI)
+//
+// A connection (one per org) holds the Telnyx API credentials. Numbers are
+// individual DDIs under that connection, each optionally wired to an IVR
+// flow that handles inbound calls.
+
+export interface TelnyxConnection {
+  id: string
+  label: string
+  call_control_app_id: string
+  outbound_profile_id: string
+  status: 'active' | 'suspended' | 'error'
+  has_api_key: boolean
+  has_public_key: boolean
+  last_verified_at?: string
+  created_at: string
+  updated_at: string
+  numbers_count: number
+}
+
+export interface TelnyxNumber {
+  id: string
+  connection_id: string
+  phone_number: string
+  label: string
+  country: string
+  number_type: string
+  telnyx_number_id: string
+  ivr_flow_id?: string | null
+  ivr_flow_name?: string
+  is_active: boolean
+  recording_enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export const telnyxConnectionsService = {
+  get: () => api.get<TelnyxConnection>('/telnyx/connection'),
+  create: (data: {
+    label: string
+    api_key: string
+    public_key?: string
+    call_control_app_id: string
+    outbound_profile_id?: string
+  }) => api.post<TelnyxConnection>('/telnyx/connections', data),
+  update: (
+    id: string,
+    data: {
+      label?: string
+      api_key?: string
+      public_key?: string
+      call_control_app_id?: string
+      outbound_profile_id?: string
+    }
+  ) => api.put<TelnyxConnection>(`/telnyx/connections/${id}`, data),
+  delete: (id: string) => api.delete(`/telnyx/connections/${id}`),
+  test: (data?: { api_key?: string }) =>
+    api.post<{ ok: boolean; error?: string }>('/telnyx/connections/test', data || {}),
+}
+
+// Agent's personal phone (for click-to-call callback).
+export const userPhoneService = {
+  update: (phoneNumber: string) =>
+    api.put<{ phone_number: string }>('/me/phone', { phone_number: phoneNumber }),
+}
+
+// Telnyx click-to-call (outbound PSTN via callback pattern).
+//
+// The backend dials the agent's personal phone first; once they pick up,
+// Telnyx transfers the leg to the contact's phone. This means:
+//   - Agent MUST have set their phone_number in their profile.
+//   - The org MUST have at least one active TelnyxNumber configured.
+export interface ClickToCallResponse {
+  call_log_id: string
+  call_control_id: string
+  to: string
+  from: string
+  status: string
+}
+
+export const telnyxCallService = {
+  clickToCall: (contactId: string, fromNumber?: string) =>
+    api.post<ClickToCallResponse>('/calls/telnyx/click-to-call', {
+      contact_id: contactId,
+      ...(fromNumber ? { from_number: fromNumber } : {}),
+    }),
+}
+
+export const telnyxNumbersService = {
+  list: (params?: { connection_id?: string }) =>
+    api.get<{ numbers: TelnyxNumber[]; total: number }>('/telnyx/numbers', { params }),
+  create: (data: {
+    connection_id: string
+    phone_number: string
+    label?: string
+    country?: string
+    number_type?: string
+    telnyx_number_id?: string
+    ivr_flow_id?: string | null
+    is_active?: boolean
+    recording_enabled?: boolean
+  }) => api.post<TelnyxNumber>('/telnyx/numbers', data),
+  update: (
+    id: string,
+    data: Partial<{
+      phone_number: string
+      label: string
+      country: string
+      number_type: string
+      telnyx_number_id: string
+      ivr_flow_id: string | null
+      is_active: boolean
+      recording_enabled: boolean
+    }>
+  ) => api.put<TelnyxNumber>(`/telnyx/numbers/${id}`, data),
+  delete: (id: string) => api.delete(`/telnyx/numbers/${id}`),
 }
 
 export default api
