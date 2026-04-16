@@ -197,12 +197,97 @@ the CRM with the phone pre-filled.
   known is picked up quickly without hammering).
 
 When a customer is created/updated in the CRM, the CRM SHOULD trigger
-the PBX `POST /api/crm/invalidate-cache` (Phase 3.2) to invalidate its
-lookup cache. For now, callers just wait for the TTL to expire.
+the PBX `POST /api/crm/invalidate-cache` (see section 3.3) to invalidate
+its lookup cache immediately.
 
 ---
 
-### 3.2 Call Events — `POST /api/pbx/call-event`
+### 3.2 Cache Invalidation — `POST /api/crm/invalidate-cache`
+
+Called by the **CRM → PBX** whenever a customer is created, updated, or
+deleted so the PBX drops its cached lookup for that phone and fetches
+fresh data on the next call.
+
+**Headers:**
+
+| Header | Required | Notes |
+|--------|----------|-------|
+| `X-iReparo-Api-Key` | yes | Shared secret (same as lookup) |
+| `X-iReparo-Signature` | yes | `sha256=<hex>` of `<ts>.<body>` |
+| `X-iReparo-Timestamp` | yes | Unix epoch seconds (≤ 5 min skew) |
+| `Content-Type` | yes | `application/json` |
+
+**Body:**
+
+```json
+{
+  "phone": "34873940702"
+}
+```
+
+The phone should be E.164 without `+` (normalized), though the PBX
+normalizes it again before invalidating.
+
+**Response: `200 OK`**
+
+```json
+{
+  "invalidated": true
+}
+```
+
+**Error codes:**
+
+- `401` — API key missing or wrong.
+- `403` — HMAC signature does not match or timestamp out of window.
+- `400` — Missing or empty `phone` field.
+- `503` — CRM integration is disabled on the PBX.
+
+**Laravel implementation (fire on model events):**
+
+```php
+// app/Observers/CustomerObserver.php
+use Illuminate\Support\Facades\Http;
+
+class CustomerObserver
+{
+    public function saved(Customer $customer): void
+    {
+        $this->invalidateCache($customer->phone_normalized);
+        if ($customer->phone_alt_normalized) {
+            $this->invalidateCache($customer->phone_alt_normalized);
+        }
+    }
+
+    private function invalidateCache(string $phone): void
+    {
+        $body = json_encode(['phone' => $phone]);
+        $ts = (string) time();
+        $secret = config('ireparo.pbx_webhook_secret');
+        $sig = 'sha256=' . hash_hmac('sha256', $ts . '.' . $body, $secret);
+
+        Http::withHeaders([
+            'X-iReparo-Api-Key'   => config('ireparo.pbx_api_key'),
+            'X-iReparo-Signature' => $sig,
+            'X-iReparo-Timestamp' => $ts,
+            'Content-Type'        => 'application/json',
+        ])->timeout(3)->post(
+            config('ireparo.pbx_base_url') . '/api/crm/invalidate-cache',
+            ['phone' => $phone]
+        );
+    }
+}
+```
+
+Register the observer in `AppServiceProvider::boot()`:
+
+```php
+Customer::observe(CustomerObserver::class);
+```
+
+---
+
+### 3.3 Call Events — `POST /api/pbx/call-event`
 
 Called by the PBX after every call lifecycle transition. Must:
 
@@ -254,7 +339,7 @@ See section 6 for the recommended schema.
 
 ## 4. Event Payloads
 
-All payloads share the same outer envelope from section 3.2. The
+All payloads share the same outer envelope from section 3.3. The
 `data` field is what varies per event type.
 
 ### 4.1 `call.ringing`
@@ -972,12 +1057,12 @@ the CRM and watch them transition to `status=delivered` within a minute.
 | **3.1 B** | **This spec doc + Laravel templates** | **Done** |
 | 3.2 | `message.inbound` / `message.outbound` events | Planned |
 | 3.2 | Admin UI for dead-letter queue replay | Planned |
-| 3.2 | `POST /api/crm/invalidate-cache` (CRM → PBX) | Planned |
+| 3.2 | `POST /api/crm/invalidate-cache` (CRM → PBX) | Done |
 | 3.3 | Click-to-call from CRM customer page | Planned |
 
 ---
 
-*Last updated: 2026-04-14. Keep this document in sync with
+*Last updated: 2026-04-16. Keep this document in sync with
 `internal/integrations/crm/events.go` — if a field changes in the Go
 struct, update the JSON example here.*
 

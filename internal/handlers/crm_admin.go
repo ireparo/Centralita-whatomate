@@ -238,6 +238,48 @@ func (a *App) DeleteCRMEventQueue(r *fastglue.Request) error {
 	return r.SendEnvelope(map[string]any{"deleted": true})
 }
 
-// Enforces compile-time that the package uses encoding/json somewhere — keeps
-// the import group clean if we later add endpoints that accept POST bodies.
-var _ = json.RawMessage(nil)
+// InvalidateCRMCache receives POST /api/crm/invalidate-cache from the
+// external CRM (Laravel). When a customer is created or updated in the CRM,
+// it calls this endpoint so the PBX's in-memory lookup cache is invalidated
+// immediately instead of waiting for the TTL to expire.
+//
+// Authentication: X-iReparo-Api-Key + X-iReparo-Signature (HMAC-SHA256),
+// same scheme as the event webhooks but in the reverse direction (CRM → PBX).
+//
+// Body: { "phone": "<normalized>" }
+//
+// Response: 200 { "invalidated": true } on success.
+func (a *App) InvalidateCRMCache(r *fastglue.Request) error {
+	if a.CRM == nil || !a.CRM.Enabled() {
+		return r.SendErrorEnvelope(fasthttp.StatusServiceUnavailable, "CRM integration is disabled", nil, "")
+	}
+
+	// --- Authenticate: API key -------------------------------------------
+	apiKey := string(r.RequestCtx.Request.Header.Peek(crm.HeaderAPIKey))
+	if apiKey == "" || apiKey != a.Config.Integrations.CRM.APIKey {
+		return r.SendErrorEnvelope(fasthttp.StatusUnauthorized, "Invalid API key", nil, "")
+	}
+
+	// --- Authenticate: HMAC signature ------------------------------------
+	body := r.RequestCtx.PostBody()
+	sig := string(r.RequestCtx.Request.Header.Peek(crm.HeaderSignature))
+	ts := string(r.RequestCtx.Request.Header.Peek(crm.HeaderTimestamp))
+	if err := crm.VerifySignature(a.Config.Integrations.CRM.WebhookSecret, sig, ts, body); err != nil {
+		a.Log.Debug("CRM invalidate-cache: signature verification failed", "error", err)
+		return r.SendErrorEnvelope(fasthttp.StatusForbidden, "Invalid signature", nil, "")
+	}
+
+	// --- Parse body ------------------------------------------------------
+	var req struct {
+		Phone string `json:"phone"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || req.Phone == "" {
+		return r.SendErrorEnvelope(fasthttp.StatusBadRequest, "Missing or invalid phone field", nil, "")
+	}
+
+	// --- Invalidate ------------------------------------------------------
+	a.CRM.InvalidateCache(req.Phone)
+	a.Log.Info("CRM cache invalidated", "phone", crm.NormalizePhone(req.Phone))
+
+	return r.SendEnvelope(map[string]any{"invalidated": true})
+}
