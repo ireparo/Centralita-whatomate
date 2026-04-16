@@ -612,7 +612,7 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 		// Skip auth for public routes
 		if path == "/health" || path == "/ready" ||
 			path == "/api/auth/login" || path == "/api/auth/register" || path == "/api/auth/refresh" ||
-			path == "/api/auth/logout" || path == "/api/webhook" || path == "/api/webhook/telnyx" || path == "/api/crm/invalidate-cache" || path == "/ws" {
+			path == "/api/auth/logout" || path == "/api/webhook" || path == "/api/webhook/telnyx" || strings.HasPrefix(path, "/api/crm/") || path == "/ws" {
 			return r
 		}
 		// Skip auth for SSO routes (they handle their own auth via state tokens)
@@ -830,9 +830,10 @@ func setupRoutes(g *fastglue.Fastglue, app *handlers.App, lo logf.Logger, basePa
 	g.POST("/api/admin/crm-queue/{id}/replay", app.ReplayCRMEventQueue)
 	g.DELETE("/api/admin/crm-queue/{id}", app.DeleteCRMEventQueue)
 
-	// CRM → PBX cache invalidation (Phase 3.2). Public route — auth is
+	// CRM → PBX endpoints (Phase 3.2–3.3). Public routes — auth is
 	// via X-iReparo-Api-Key + X-iReparo-Signature, not JWT.
 	g.POST("/api/crm/invalidate-cache", app.InvalidateCRMCache)
+	g.POST("/api/crm/click-to-call", app.CRMClickToCall)
 
 	// Telnyx PSTN — connection + numbers admin (Phase 2.4 UI)
 	g.GET("/api/telnyx/connection", app.GetTelnyxConnection)

@@ -197,7 +197,7 @@ the CRM with the phone pre-filled.
   known is picked up quickly without hammering).
 
 When a customer is created/updated in the CRM, the CRM SHOULD trigger
-the PBX `POST /api/crm/invalidate-cache` (see section 3.3) to invalidate
+the PBX `POST /api/crm/invalidate-cache` (see section 3.2) to invalidate
 its lookup cache immediately.
 
 ---
@@ -287,7 +287,110 @@ Customer::observe(CustomerObserver::class);
 
 ---
 
-### 3.3 Call Events — `POST /api/pbx/call-event`
+### 3.3 Click-to-Call — `POST /api/crm/click-to-call`
+
+Called by the **CRM → PBX** when a CRM user clicks "Call" on a customer
+page. The PBX uses a callback pattern:
+
+1. PBX dials the **agent's personal phone** first.
+2. When the agent picks up, Telnyx bridges the call to the **customer**.
+
+This means the agent pays no phone bill (the PBX is always the caller
+on both legs).
+
+**Headers:**
+
+| Header | Required | Notes |
+|--------|----------|-------|
+| `X-iReparo-Api-Key` | yes | Shared secret |
+| `X-iReparo-Signature` | yes | `sha256=<hex>` of `<ts>.<body>` |
+| `X-iReparo-Timestamp` | yes | Unix epoch seconds (≤ 5 min skew) |
+| `Content-Type` | yes | `application/json` |
+
+**Body:**
+
+```json
+{
+  "phone": "34666123456",
+  "agent_email": "juan@ireparo.es",
+  "from_number": "34873940702"
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `phone` | yes | Customer phone (E.164 no `+`) |
+| `agent_email` | yes | Email of the PBX agent who should receive the call |
+| `from_number` | no | Override caller ID (E.164 no `+`). If empty, the first active Telnyx number is used |
+
+**Response: `200 OK`**
+
+```json
+{
+  "call_log_id": "7f9e2c1a-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+  "call_control_id": "v3:abc123...",
+  "agent_phone": "34600111222",
+  "customer_phone": "34666123456",
+  "from_number": "34873940702",
+  "status": "ringing_agent"
+}
+```
+
+The `call_log_id` can be correlated with subsequent `call.answered` /
+`call.ended` / `call.missed` webhook events.
+
+**Error codes:**
+
+- `401` — API key missing or wrong.
+- `403` — HMAC signature does not match.
+- `400` — Missing `phone` or `agent_email`; agent has no phone configured.
+- `404` — Agent not found for the given email.
+- `424` — No Telnyx connection or outbound number configured.
+- `502` — Telnyx dial failed (network, invalid number, etc.).
+- `503` — CRM integration is disabled.
+
+**Laravel implementation (Livewire button example):**
+
+```php
+// app/Livewire/ClickToCall.php
+use Illuminate\Support\Facades\Http;
+
+class ClickToCall extends Component
+{
+    public Customer $customer;
+
+    public function call(): void
+    {
+        $body = json_encode([
+            'phone'       => $this->customer->phone_normalized,
+            'agent_email' => auth()->user()->email,
+        ]);
+        $ts = (string) time();
+        $secret = config('ireparo.pbx_webhook_secret');
+        $sig = 'sha256=' . hash_hmac('sha256', $ts . '.' . $body, $secret);
+
+        $response = Http::withHeaders([
+            'X-iReparo-Api-Key'   => config('ireparo.pbx_api_key'),
+            'X-iReparo-Signature' => $sig,
+            'X-iReparo-Timestamp' => $ts,
+            'Content-Type'        => 'application/json',
+        ])->timeout(15)->post(
+            config('ireparo.pbx_base_url') . '/api/crm/click-to-call',
+            json_decode($body, true)
+        );
+
+        if ($response->successful()) {
+            session()->flash('message', 'Llamando al agente...');
+        } else {
+            session()->flash('error', 'Error: ' . $response->json('message'));
+        }
+    }
+}
+```
+
+---
+
+### 3.4 Call Events — `POST /api/pbx/call-event`
 
 Called by the PBX after every call lifecycle transition. Must:
 
@@ -339,7 +442,7 @@ See section 6 for the recommended schema.
 
 ## 4. Event Payloads
 
-All payloads share the same outer envelope from section 3.3. The
+All payloads share the same outer envelope from section 3.4. The
 `data` field is what varies per event type.
 
 ### 4.1 `call.ringing`
@@ -1058,7 +1161,7 @@ the CRM and watch them transition to `status=delivered` within a minute.
 | 3.2 | `message.inbound` / `message.outbound` events | Planned |
 | 3.2 | Admin UI for dead-letter queue replay | Planned |
 | 3.2 | `POST /api/crm/invalidate-cache` (CRM → PBX) | Done |
-| 3.3 | Click-to-call from CRM customer page | Planned |
+| 3.3 | Click-to-call from CRM customer page | Done |
 
 ---
 
