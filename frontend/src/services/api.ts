@@ -1131,4 +1131,36 @@ export const ivrFlowsService = {
   getAudioUrl: (filename: string) => `${api.defaults.baseURL}/ivr-flows/audio/${encodeURIComponent(filename)}`
 }
 
+// CRM event queue — admin DLQ viewer + manual replay/discard.
+// See internal/handlers/crm_queue.go on the backend.
+export interface CRMQueueEntry {
+  id: string
+  event_type: string
+  endpoint: string
+  status: 'pending' | 'delivered' | 'dead_letter'
+  attempt_count: number
+  next_attempt_at?: string | null
+  last_error?: string
+  delivered_at?: string | null
+  timestamp: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CRMQueueDetail extends CRMQueueEntry {
+  payload: string
+  signature: string
+}
+
+export const crmQueueService = {
+  list: (params?: { status?: string; event_type?: string; page?: number; limit?: number }) =>
+    api.get<{ queue: CRMQueueEntry[]; total: number; summary: Record<string, number>; page: number; limit: number }>(
+      '/crm-queue',
+      { params },
+    ),
+  get: (id: string) => api.get<CRMQueueDetail>(`/crm-queue/${id}`),
+  replay: (id: string) => api.post<CRMQueueEntry>(`/crm-queue/${id}/replay`),
+  discard: (id: string) => api.delete<{ discarded: boolean }>(`/crm-queue/${id}`),
+}
+
 export default api

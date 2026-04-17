@@ -270,6 +270,7 @@
     "customActions": "Custom Actions",
     "sso": "SSO",
     "auditLogs": "Audit Logs",
+    "crmQueue": "CRM event queue",
     "calling": "Calling",
     "callLogs": "Call Logs",
     "ivrFlows": "IVR Flows",
@@ -2506,5 +2507,45 @@
     "callFailed": "Failed to initiate call",
     "permissionSent": "Call permission request sent",
     "permissionSentDesc": "The contact needs to accept the call permission on WhatsApp before you can call them. Try again after they accept."
+  },
+  "crmQueue": {
+    "title": "CRM event queue",
+    "description": "Events that failed to deliver to the external CRM. The worker retries them automatically with exponential backoff; after 10 attempts they move to 'dead' and you can retry manually here.",
+    "deadLetter": "Dead letter (no more retries)",
+    "pending": "Pending (active retry queue)",
+    "delivered": "Delivered",
+    "tab": {
+      "dead_letter": "Dead events",
+      "pending": "Pending events",
+      "delivered": "Delivered events"
+    },
+    "tabDesc": {
+      "dead_letter": "Events that have failed 10+ times. Review the error, fix the CRM issue, and press Replay.",
+      "pending": "Events in the active queue. The worker will process them automatically.",
+      "delivered": "History of events that were eventually delivered successfully."
+    },
+    "statusLabel": {
+      "pending": "Pending",
+      "delivered": "Delivered",
+      "dead_letter": "Dead"
+    },
+    "createdAt": "Date",
+    "eventType": "Event",
+    "status": "Status",
+    "attempts": "Attempts",
+    "lastError": "Last error",
+    "endpoint": "Endpoint",
+    "payload": "Payload",
+    "replay": "Replay now",
+    "discard": "Discard",
+    "detailTitle": "Event detail",
+    "loadError": "Failed to load queue",
+    "replayQueued": "Event re-queued",
+    "replayDescription": "Worker will process it in the next 15 seconds",
+    "replayFailed": "Failed to replay",
+    "discarded": "Event discarded",
+    "discardFailed": "Failed to discard",
+    "discardConfirmTitle": "Discard this event?",
+    "discardConfirmDesc": "The event will be permanently deleted and cannot be delivered to the CRM. This action cannot be undone."
   }
 }

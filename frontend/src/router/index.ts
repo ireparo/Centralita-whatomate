@@ -267,6 +267,12 @@ const router = createRouter({
           meta: { permission: 'audit_logs' }
         },
         {
+          path: 'settings/crm-queue',
+          name: 'crm-queue',
+          component: () => import('@/views/settings/CrmQueueView.vue'),
+          meta: { permission: 'settings.general' }
+        },
+        {
           path: 'calling',
           redirect: '/calling/logs'
         },
