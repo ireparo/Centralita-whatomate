@@ -116,6 +116,18 @@ func (c *Client) Lookup(ctx context.Context, phoneRaw string) (*LookupResponse, 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.cfg.UserAgent)
 
+	// Firma HMAC-SHA256 sobre "{timestamp}." (body vacío) para que el
+	// CRM acepte el GET — su authenticate() exige timestamp + firma en
+	// TODAS las llamadas (defensa en profundidad contra fuga del API
+	// key suelta). Antes de este fix, todo lookup contra el CRM
+	// configurado respondería 401.
+	if c.cfg.WebhookSecret != "" {
+		ts := time.Now().Unix()
+		sig := SignPayload(c.cfg.WebhookSecret, ts, nil)
+		req.Header.Set(HeaderSignature, sig)
+		req.Header.Set(HeaderTimestamp, strconv.FormatInt(ts, 10))
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("crm lookup: %w", err)
