@@ -116,23 +116,11 @@ func CRMEnrichBroadcast(payload map[string]any, lookup *crm.LookupResponse) {
 //
 // Always returns immediately — the actual HTTP send happens in a tracked
 // goroutine so the call pipeline is never blocked by CRM latency.
+//
+// Mensajes WhatsApp NO se espejan por este canal — el CRM tiene un
+// driver "centralita" propio que consume directamente /api/messages/send
+// y expone /api/pbx/whatsapp-incoming, así que el mirror ya va por ahí.
 func (a *App) CRMEmitCallEvent(orgID uuid.UUID, eventType string, data any) {
-	a.crmEmitEvent(orgID, eventType, data)
-}
-
-// CRMEmitMessageEvent is the message.{inbound,outbound} counterpart of
-// CRMEmitCallEvent — same async + retry semantics, exposed as a separate
-// function purely so the call sites read cleanly at the ringing/send
-// pipelines. No-op if CRM integration is disabled.
-func (a *App) CRMEmitMessageEvent(orgID uuid.UUID, eventType string, data any) {
-	a.crmEmitEvent(orgID, eventType, data)
-}
-
-// crmEmitEvent is the shared async-send-with-retry-queue implementation
-// behind CRMEmitCallEvent / CRMEmitMessageEvent. Kept unexported so both
-// helpers give a type-checked entry point for their respective event
-// families.
-func (a *App) crmEmitEvent(orgID uuid.UUID, eventType string, data any) {
 	if a.CRM == nil || !a.CRM.Enabled() {
 		return
 	}
